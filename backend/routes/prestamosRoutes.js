@@ -1,6 +1,7 @@
 import express from 'express';
 import pool from '../config/database.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
+import { isValidDate } from '../utils/validators.js';
 
 const router = express.Router();
 
@@ -26,7 +27,10 @@ router.get('/', authenticateToken, async (req, res) => {
         r.codigo as recurso_codigo,
         r.nombre as recurso_nombre,
         r.descripcion as recurso_descripcion,
-        r.imagen as recurso_imagen
+        r.imagen as recurso_imagen,
+        p.trabajador_id,
+        p.trabajador_nombre,
+        p.trabajador_email
       FROM prestamos p
       INNER JOIN usuarios u ON p.usuario_id = u.id
       INNER JOIN recursos r ON p.recurso_id = r.id
@@ -34,8 +38,8 @@ router.get('/', authenticateToken, async (req, res) => {
     `;
     const params = [];
 
-    // Si es usuario estándar, solo ver sus préstamos
-    if (req.user.rol !== 'administrador') {
+    // Si es usuario estándar, solo ver sus préstamos. Admin y trabajadores ven todos
+    if (req.user.rol !== 'administrador' && req.user.rol !== 'trabajador') {
       query += ' AND p.usuario_id = ?';
       params.push(req.user.id);
     } else if (usuario_id) {
@@ -85,7 +89,10 @@ router.get('/:id', authenticateToken, async (req, res) => {
         r.codigo as recurso_codigo,
         r.nombre as recurso_nombre,
         r.descripcion as recurso_descripcion,
-        r.imagen as recurso_imagen
+        r.imagen as recurso_imagen,
+        p.trabajador_id,
+        p.trabajador_nombre,
+        p.trabajador_email
       FROM prestamos p
       INNER JOIN usuarios u ON p.usuario_id = u.id
       INNER JOIN recursos r ON p.recurso_id = r.id
@@ -93,8 +100,8 @@ router.get('/:id', authenticateToken, async (req, res) => {
     `;
     const params = [req.params.id];
 
-    // Si es usuario estándar, solo ver sus préstamos
-    if (req.user.rol !== 'administrador') {
+    // Si es usuario estándar, solo ver sus préstamos. Admin y trabajadores ven todos
+    if (req.user.rol !== 'administrador' && req.user.rol !== 'trabajador') {
       query += ' AND p.usuario_id = ?';
       params.push(req.user.id);
     }
@@ -112,45 +119,41 @@ router.get('/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Crear préstamo
+// Crear préstamo(s) - soporta uno o múltiples recursos
 router.post('/', authenticateToken, async (req, res) => {
   try {
-    const { usuario_id, recurso_id, fecha_prestamo, fecha_devolucion_prevista, observaciones } = req.body;
+    const { usuario_id, recurso_id, recursos_ids, fecha_prestamo, fecha_devolucion_prevista, observaciones } = req.body;
 
-    if (!usuario_id || !recurso_id || !fecha_prestamo || !fecha_devolucion_prevista) {
+    // Determinar si es un solo recurso o múltiples
+    let recursosIds = [];
+    if (recursos_ids && Array.isArray(recursos_ids) && recursos_ids.length > 0) {
+      recursosIds = recursos_ids;
+    } else if (recurso_id) {
+      recursosIds = [recurso_id];
+    }
+
+    if (!usuario_id || recursosIds.length === 0 || !fecha_prestamo || !fecha_devolucion_prevista) {
       return res.status(400).json({ 
-        message: 'Usuario, recurso, fecha de préstamo y fecha de devolución son requeridos' 
+        message: 'Usuario, al menos un recurso, fecha de préstamo y fecha de devolución son requeridos' 
       });
     }
 
-    // Solo admin puede crear préstamos para otros usuarios
-    const finalUsuarioId = req.user.rol === 'administrador' ? usuario_id : req.user.id;
+    // Admin y trabajadores pueden crear préstamos para otros usuarios
+    const finalUsuarioId = (req.user.rol === 'administrador' || req.user.rol === 'trabajador') 
+      ? usuario_id 
+      : req.user.id;
 
-    // Verificar que el recurso existe y está disponible
-    const [recursos] = await pool.query(
-      'SELECT * FROM recursos WHERE id = ?',
-      [recurso_id]
+    // Obtener información del trabajador autenticado (quien hace el préstamo)
+    const [trabajadorInfo] = await pool.query(
+      'SELECT id, nombre_completo, email FROM usuarios WHERE id = ?',
+      [req.user.id]
     );
 
-    if (recursos.length === 0) {
-      return res.status(404).json({ message: 'Recurso no encontrado' });
+    if (trabajadorInfo.length === 0) {
+      return res.status(404).json({ message: 'Trabajador no encontrado' });
     }
 
-    if (recursos[0].estado !== 'disponible') {
-      return res.status(400).json({ 
-        message: `El recurso no está disponible. Estado actual: ${recursos[0].estado}` 
-      });
-    }
-
-    // Verificar que no hay préstamos activos para este recurso
-    const [activeLoans] = await pool.query(
-      'SELECT id FROM prestamos WHERE recurso_id = ? AND estado = "activo"',
-      [recurso_id]
-    );
-
-    if (activeLoans.length > 0) {
-      return res.status(400).json({ message: 'El recurso ya tiene un préstamo activo' });
-    }
+    const trabajador = trabajadorInfo[0];
 
     // Verificar que el usuario existe
     const [usuarios] = await pool.query(
@@ -160,6 +163,15 @@ router.post('/', authenticateToken, async (req, res) => {
 
     if (usuarios.length === 0) {
       return res.status(404).json({ message: 'Usuario no encontrado' });
+    }
+
+    // Validar formato de fechas
+    if (!isValidDate(fecha_prestamo)) {
+      return res.status(400).json({ message: 'Formato de fecha de préstamo inválido (debe ser YYYY-MM-DD)' });
+    }
+
+    if (!isValidDate(fecha_devolucion_prevista)) {
+      return res.status(400).json({ message: 'Formato de fecha de devolución inválido (debe ser YYYY-MM-DD)' });
     }
 
     // Validar fechas
@@ -172,37 +184,117 @@ router.post('/', authenticateToken, async (req, res) => {
       });
     }
 
-    // Crear préstamo
-    const [result] = await pool.query(
-      `INSERT INTO prestamos (usuario_id, recurso_id, fecha_prestamo, fecha_devolucion_prevista, observaciones) 
-       VALUES (?, ?, ?, ?, ?)`,
-      [finalUsuarioId, recurso_id, fecha_prestamo, fecha_devolucion_prevista, observaciones || null]
-    );
+    // Verificar todos los recursos antes de crear préstamos
+    const recursosNoDisponibles = [];
+    const recursosConPrestamos = [];
+    const recursosNoEncontrados = [];
 
-    // Actualizar estado del recurso
-    await pool.query(
-      'UPDATE recursos SET estado = "prestado" WHERE id = ?',
-      [recurso_id]
-    );
+    for (const recursoId of recursosIds) {
+      const [recursos] = await pool.query(
+        'SELECT * FROM recursos WHERE id = ?',
+        [recursoId]
+      );
 
-    // Obtener préstamo creado con información relacionada
-    const [newLoan] = await pool.query(
-      `SELECT 
-        p.*,
-        u.codigo as usuario_codigo,
-        u.nombre_completo as usuario_nombre,
-        r.codigo as recurso_codigo,
-        r.nombre as recurso_nombre
-      FROM prestamos p
-      INNER JOIN usuarios u ON p.usuario_id = u.id
-      INNER JOIN recursos r ON p.recurso_id = r.id
-      WHERE p.id = ?`,
-      [result.insertId]
-    );
+      if (recursos.length === 0) {
+        recursosNoEncontrados.push(recursoId);
+        continue;
+      }
+
+      if (recursos[0].estado !== 'disponible') {
+        recursosNoDisponibles.push({ id: recursoId, nombre: recursos[0].nombre, estado: recursos[0].estado });
+        continue;
+      }
+
+      const [activeLoans] = await pool.query(
+        'SELECT id FROM prestamos WHERE recurso_id = ? AND estado = "activo"',
+        [recursoId]
+      );
+
+      if (activeLoans.length > 0) {
+        recursosConPrestamos.push({ id: recursoId, nombre: recursos[0].nombre });
+      }
+    }
+
+    // Si hay errores, retornarlos
+    if (recursosNoEncontrados.length > 0 || recursosNoDisponibles.length > 0 || recursosConPrestamos.length > 0) {
+      let mensaje = 'Error al crear préstamos:\n';
+      if (recursosNoEncontrados.length > 0) {
+        mensaje += `- Recursos no encontrados: ${recursosNoEncontrados.join(', ')}\n`;
+      }
+      if (recursosNoDisponibles.length > 0) {
+        mensaje += `- Recursos no disponibles: ${recursosNoDisponibles.map(r => `${r.nombre} (${r.estado})`).join(', ')}\n`;
+      }
+      if (recursosConPrestamos.length > 0) {
+        mensaje += `- Recursos con préstamos activos: ${recursosConPrestamos.map(r => r.nombre).join(', ')}\n`;
+      }
+      return res.status(400).json({ message: mensaje.trim() });
+    }
+
+    // Crear préstamos para cada recurso
+    const prestamosCreados = [];
+    const connection = await pool.getConnection();
+    
+    try {
+      await connection.beginTransaction();
+
+      for (const recursoId of recursosIds) {
+        // Crear préstamo
+        const [result] = await connection.query(
+          `INSERT INTO prestamos (usuario_id, recurso_id, trabajador_id, trabajador_nombre, trabajador_email, fecha_prestamo, fecha_devolucion_prevista, observaciones) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            finalUsuarioId, 
+            recursoId, 
+            trabajador.id,
+            trabajador.nombre_completo,
+            trabajador.email,
+            fecha_prestamo, 
+            fecha_devolucion_prevista, 
+            observaciones || null
+          ]
+        );
+
+        // Actualizar estado del recurso
+        await connection.query(
+          'UPDATE recursos SET estado = "prestado" WHERE id = ?',
+          [recursoId]
+        );
+
+        // Obtener préstamo creado
+        const [newLoan] = await connection.query(
+          `SELECT 
+            p.*,
+            u.codigo as usuario_codigo,
+            u.nombre_completo as usuario_nombre,
+            u.email as usuario_email,
+            r.codigo as recurso_codigo,
+            r.nombre as recurso_nombre,
+            p.trabajador_id,
+            p.trabajador_nombre,
+            p.trabajador_email
+          FROM prestamos p
+          INNER JOIN usuarios u ON p.usuario_id = u.id
+          INNER JOIN recursos r ON p.recurso_id = r.id
+          WHERE p.id = ?`,
+          [result.insertId]
+        );
+
+        prestamosCreados.push(newLoan[0]);
+      }
+
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
 
     res.status(201).json({
-      message: 'Préstamo creado exitosamente',
-      prestamo: newLoan[0]
+      message: recursosIds.length === 1 
+        ? 'Préstamo creado exitosamente' 
+        : `${recursosIds.length} préstamos creados exitosamente`,
+      prestamos: prestamosCreados
     });
   } catch (error) {
     console.error('Error al crear préstamo:', error);
@@ -260,8 +352,12 @@ router.put('/:id/devolver', authenticateToken, async (req, res) => {
         p.*,
         u.codigo as usuario_codigo,
         u.nombre_completo as usuario_nombre,
+        u.email as usuario_email,
         r.codigo as recurso_codigo,
-        r.nombre as recurso_nombre
+        r.nombre as recurso_nombre,
+        p.trabajador_id,
+        p.trabajador_nombre,
+        p.trabajador_email
       FROM prestamos p
       INNER JOIN usuarios u ON p.usuario_id = u.id
       INNER JOIN recursos r ON p.recurso_id = r.id

@@ -24,3 +24,10 @@ export const requireAdmin = (req, res, next) => {
   next();
 };
 
+export const requireAdminOrTrabajador = (req, res, next) => {
+  if (req.user.rol !== 'administrador' && req.user.rol !== 'trabajador') {
+    return res.status(403).json({ message: 'Acceso denegado. Se requiere rol de administrador o trabajador' });
+  }
+  next();
+};
+

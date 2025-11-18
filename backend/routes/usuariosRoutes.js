@@ -2,11 +2,16 @@ import express from 'express';
 import bcrypt from 'bcryptjs';
 import pool from '../config/database.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
+import { isValidEmail, isValidPassword } from '../utils/validators.js';
 
 const router = express.Router();
 
-// Obtener todos los usuarios
-router.get('/', authenticateToken, requireAdmin, async (req, res) => {
+// Obtener todos los usuarios (admin y trabajadores)
+router.get('/', authenticateToken, async (req, res) => {
+  // Solo admin y trabajadores pueden ver la lista de usuarios
+  if (req.user.rol !== 'administrador' && req.user.rol !== 'trabajador') {
+    return res.status(403).json({ message: 'Acceso denegado' });
+  }
   try {
     const { rol, busqueda } = req.query;
     let query = 'SELECT id, codigo, nombre_completo, email, rol, created_at FROM usuarios WHERE 1=1';
@@ -57,13 +62,37 @@ router.get('/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Crear usuario (solo admin)
-router.post('/', authenticateToken, requireAdmin, async (req, res) => {
+// Crear usuario (admin y trabajadores)
+router.post('/', authenticateToken, async (req, res) => {
   try {
+    // Solo admin y trabajadores pueden crear usuarios
+    if (req.user.rol !== 'administrador' && req.user.rol !== 'trabajador') {
+      return res.status(403).json({ message: 'Acceso denegado' });
+    }
+
     const { codigo, nombre_completo, email, password, rol } = req.body;
 
     if (!codigo || !nombre_completo || !email || !password) {
       return res.status(400).json({ message: 'Todos los campos son requeridos' });
+    }
+
+    // Validar formato de email
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ message: 'El formato del email no es válido' });
+    }
+
+    // Validar contraseña
+    if (!isValidPassword(password)) {
+      return res.status(400).json({ message: 'La contraseña debe tener al menos 6 caracteres' });
+    }
+
+    // Los trabajadores solo pueden crear usuarios con rol "usuario" (estudiantes)
+    // Los administradores pueden crear cualquier rol
+    let finalRol = rol || 'usuario';
+    if (req.user.rol === 'trabajador' && finalRol !== 'usuario') {
+      return res.status(403).json({ 
+        message: 'Los trabajadores solo pueden crear usuarios con rol "usuario" (estudiantes)' 
+      });
     }
 
     // Verificar si el email o código ya existe
@@ -81,7 +110,7 @@ router.post('/', authenticateToken, requireAdmin, async (req, res) => {
     const [result] = await pool.query(
       `INSERT INTO usuarios (codigo, nombre_completo, email, password, rol) 
        VALUES (?, ?, ?, ?, ?)`,
-      [codigo, nombre_completo, email, hashedPassword, rol || 'usuario']
+      [codigo, nombre_completo, email, hashedPassword, finalRol]
     );
 
     const [newUser] = await pool.query(
@@ -122,6 +151,16 @@ router.put('/:id', authenticateToken, async (req, res) => {
 
     if (existing.length === 0) {
       return res.status(404).json({ message: 'Usuario no encontrado' });
+    }
+
+    // Validar formato de email si se proporciona
+    if (email && !isValidEmail(email)) {
+      return res.status(400).json({ message: 'El formato del email no es válido' });
+    }
+
+    // Validar contraseña si se proporciona
+    if (password && !isValidPassword(password)) {
+      return res.status(400).json({ message: 'La contraseña debe tener al menos 6 caracteres' });
     }
 
     // Verificar si el email o código ya existe en otro usuario
@@ -207,6 +246,64 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
   } catch (error) {
     console.error('Error al eliminar usuario:', error);
     res.status(500).json({ message: 'Error al eliminar usuario' });
+  }
+});
+
+// Buscar o crear usuario por código de carnet (para trabajadores)
+router.post('/buscar-por-codigo', authenticateToken, async (req, res) => {
+  try {
+    // Solo admin y trabajadores pueden usar esta funcionalidad
+    if (req.user.rol !== 'administrador' && req.user.rol !== 'trabajador') {
+      return res.status(403).json({ message: 'Acceso denegado' });
+    }
+
+    const { codigo } = req.body;
+
+    if (!codigo) {
+      return res.status(400).json({ message: 'El código es requerido' });
+    }
+
+    // Buscar usuario por código
+    const [usuarios] = await pool.query(
+      'SELECT id, codigo, nombre_completo, email, rol FROM usuarios WHERE codigo = ?',
+      [codigo]
+    );
+
+    if (usuarios.length > 0) {
+      // Usuario encontrado
+      return res.json({
+        encontrado: true,
+        usuario: usuarios[0]
+      });
+    }
+
+    // Usuario no encontrado - crear uno nuevo automáticamente
+    // Generar email y nombre basado en el código
+    const email = `${codigo}@estudiante.local`;
+    const nombreCompleto = `Estudiante ${codigo}`;
+    const password = codigo; // Contraseña temporal igual al código
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const [result] = await pool.query(
+      `INSERT INTO usuarios (codigo, nombre_completo, email, password, rol) 
+       VALUES (?, ?, ?, ?, ?)`,
+      [codigo, nombreCompleto, email, hashedPassword, 'usuario']
+    );
+
+    const [newUser] = await pool.query(
+      'SELECT id, codigo, nombre_completo, email, rol FROM usuarios WHERE id = ?',
+      [result.insertId]
+    );
+
+    return res.json({
+      encontrado: false,
+      creado: true,
+      usuario: newUser[0],
+      message: 'Usuario creado automáticamente. Por favor, actualiza el nombre y email si es necesario.'
+    });
+  } catch (error) {
+    console.error('Error al buscar/crear usuario por código:', error);
+    res.status(500).json({ message: 'Error al buscar/crear usuario' });
   }
 });
 

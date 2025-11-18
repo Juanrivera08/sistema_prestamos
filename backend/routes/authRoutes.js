@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import pool from '../config/database.js';
 import { authenticateToken } from '../middleware/auth.js';
+import { isValidEmail, isValidPassword } from '../utils/validators.js';
 
 const router = express.Router();
 
@@ -13,6 +14,16 @@ router.post('/register', async (req, res) => {
 
     if (!codigo || !nombre_completo || !email || !password) {
       return res.status(400).json({ message: 'Todos los campos son requeridos' });
+    }
+
+    // Validar formato de email
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ message: 'El formato del email no es válido' });
+    }
+
+    // Validar contraseña
+    if (!isValidPassword(password)) {
+      return res.status(400).json({ message: 'La contraseña debe tener al menos 6 caracteres' });
     }
 
     // Verificar si el email ya existe
@@ -67,6 +78,11 @@ router.post('/login', async (req, res) => {
 
     if (!email || !password) {
       return res.status(400).json({ message: 'Email y contraseña son requeridos' });
+    }
+
+    // Validar formato de email
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ message: 'El formato del email no es válido' });
     }
 
     const [users] = await pool.query(
