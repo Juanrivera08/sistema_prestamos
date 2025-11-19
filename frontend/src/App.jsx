@@ -7,6 +7,10 @@ import Dashboard from './pages/Dashboard';
 import Recursos from './pages/Recursos';
 import Usuarios from './pages/Usuarios';
 import Prestamos from './pages/Prestamos';
+import Reservas from './pages/Reservas';
+import Multas from './pages/Multas';
+import Historial from './pages/Historial';
+import Calendario from './pages/Calendario';
 import Informes from './pages/Informes';
 import Layout from './components/Layout';
 
@@ -30,6 +34,11 @@ function App() {
               <Route path="recursos" element={<Recursos />} />
               <Route path="usuarios" element={<Usuarios />} />
               <Route path="prestamos" element={<Prestamos />} />
+              <Route path="reservas" element={<Reservas />} />
+              <Route path="multas" element={<Multas />} />
+              <Route path="historial" element={<Historial />} />
+              <Route path="historial/:tipo/:id" element={<Historial />} />
+              <Route path="calendario" element={<Calendario />} />
               <Route path="informes" element={<Informes />} />
             </Route>
           </Routes>

@@ -41,7 +41,7 @@ const upload = multer({
 // Obtener todos los recursos
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    const { estado, busqueda, categoria, agrupado } = req.query;
+    const { estado, busqueda, categoria, agrupado, incluir_eliminados } = req.query;
     
     // Si se solicita agrupado, devolver recursos agrupados por categoría
     if (agrupado === 'true') {
@@ -53,9 +53,13 @@ router.get('/', authenticateToken, async (req, res) => {
           SUM(CASE WHEN estado = 'prestado' THEN 1 ELSE 0 END) as prestados,
           SUM(CASE WHEN estado = 'mantenimiento' THEN 1 ELSE 0 END) as mantenimiento
         FROM recursos
-        WHERE 1=1
+        WHERE deleted_at IS NULL
       `;
       const params = [];
+
+      if (incluir_eliminados !== 'true') {
+        query += ' AND deleted_at IS NULL';
+      }
 
       if (estado) {
         query += ' AND estado = ?';
@@ -85,9 +89,9 @@ router.get('/', authenticateToken, async (req, res) => {
 
           // Manejar categorías NULL correctamente
           if (grupo.categoria === 'Sin categoría') {
-            recursosQuery = 'SELECT * FROM recursos WHERE categoria IS NULL';
+            recursosQuery = 'SELECT * FROM recursos WHERE categoria IS NULL AND deleted_at IS NULL';
           } else {
-            recursosQuery = 'SELECT * FROM recursos WHERE categoria = ?';
+            recursosQuery = 'SELECT * FROM recursos WHERE categoria = ? AND deleted_at IS NULL';
             recursosParams.push(grupo.categoria);
           }
 
@@ -119,6 +123,10 @@ router.get('/', authenticateToken, async (req, res) => {
     // Consulta normal (sin agrupar)
     let query = 'SELECT * FROM recursos WHERE 1=1';
     const params = [];
+
+    if (incluir_eliminados !== 'true') {
+      query += ' AND deleted_at IS NULL';
+    }
 
     if (estado) {
       query += ' AND estado = ?';
@@ -168,7 +176,7 @@ router.get('/categorias', authenticateToken, async (req, res) => {
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const [recursos] = await pool.query(
-      'SELECT * FROM recursos WHERE id = ?',
+      'SELECT * FROM recursos WHERE id = ? AND deleted_at IS NULL',
       [req.params.id]
     );
 
@@ -299,6 +307,7 @@ router.put('/:id', authenticateToken, requireAdminOrTrabajador, upload.single('i
 });
 
 // Eliminar recurso (admin y trabajadores)
+// Soft delete - Eliminar recurso (marcar como eliminado)
 router.delete('/:id', authenticateToken, requireAdminOrTrabajador, async (req, res) => {
   try {
     // Verificar si tiene préstamos activos
@@ -313,8 +322,9 @@ router.delete('/:id', authenticateToken, requireAdminOrTrabajador, async (req, r
       });
     }
 
+    // Soft delete - marcar como eliminado
     const [result] = await pool.query(
-      'DELETE FROM recursos WHERE id = ?',
+      'UPDATE recursos SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL',
       [req.params.id]
     );
 
@@ -329,11 +339,30 @@ router.delete('/:id', authenticateToken, requireAdminOrTrabajador, async (req, r
   }
 });
 
+// Restaurar recurso eliminado (soft delete)
+router.put('/:id/restaurar', authenticateToken, requireAdminOrTrabajador, async (req, res) => {
+  try {
+    const [result] = await pool.query(
+      'UPDATE recursos SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL',
+      [req.params.id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: 'Recurso no encontrado o no está eliminado' });
+    }
+
+    res.json({ message: 'Recurso restaurado exitosamente' });
+  } catch (error) {
+    console.error('Error al restaurar recurso:', error);
+    res.status(500).json({ message: 'Error al restaurar recurso' });
+  }
+});
+
 // Generar código QR para un recurso
 router.get('/:id/qr', authenticateToken, async (req, res) => {
   try {
     const [recursos] = await pool.query(
-      'SELECT * FROM recursos WHERE id = ?',
+      'SELECT * FROM recursos WHERE id = ? AND deleted_at IS NULL',
       [req.params.id]
     );
 

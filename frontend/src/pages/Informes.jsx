@@ -12,7 +12,11 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
-  ResponsiveContainer
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  AreaChart,
+  Area
 } from 'recharts';
 import { format } from 'date-fns';
 
@@ -212,6 +216,30 @@ const Informes = () => {
         </button>
       </div>
 
+      {/* Estadísticas generales */}
+      {stats && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 transition-colors">
+            <div className="text-sm text-gray-600 dark:text-gray-400">Total Recursos</div>
+            <div className="text-2xl font-bold text-gray-900 dark:text-white">{stats.recursos.total}</div>
+          </div>
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 transition-colors">
+            <div className="text-sm text-gray-600 dark:text-gray-400">Total Préstamos</div>
+            <div className="text-2xl font-bold text-gray-900 dark:text-white">{stats.prestamos.total}</div>
+          </div>
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 transition-colors">
+            <div className="text-sm text-gray-600 dark:text-gray-400">Préstamos Vencidos</div>
+            <div className="text-2xl font-bold text-red-600 dark:text-red-400">{stats.prestamos.vencidos}</div>
+          </div>
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 transition-colors">
+            <div className="text-sm text-gray-600 dark:text-gray-400">Recursos Más Prestados</div>
+            <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+              {stats.recursosMasPrestados?.[0]?.veces_prestado || 0}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Gráficos */}
       {stats && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
@@ -251,6 +279,49 @@ const Informes = () => {
               </BarChart>
             </ResponsiveContainer>
           </div>
+
+          {/* Recursos más prestados */}
+          {stats.recursosMasPrestados && stats.recursosMasPrestados.length > 0 && (
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 transition-colors">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Top 10 Recursos Más Prestados</h2>
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart 
+                  data={stats.recursosMasPrestados.map(r => ({
+                    name: r.nombre.length > 15 ? r.nombre.substring(0, 15) + '...' : r.nombre,
+                    veces: r.veces_prestado
+                  }))}
+                  layout="vertical"
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis type="number" />
+                  <YAxis dataKey="name" type="category" width={120} />
+                  <Tooltip />
+                  <Bar dataKey="veces" fill="#10b981" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* Usuarios con más préstamos */}
+          {stats.usuariosMasPrestamos && stats.usuariosMasPrestamos.length > 0 && (
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 transition-colors">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Top 10 Usuarios con Más Préstamos</h2>
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart 
+                  data={stats.usuariosMasPrestamos.map(u => ({
+                    name: u.nombre_completo.length > 15 ? u.nombre_completo.substring(0, 15) + '...' : u.nombre_completo,
+                    prestamos: u.total_prestamos
+                  }))}
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
+                  <YAxis />
+                  <Tooltip />
+                  <Bar dataKey="prestamos" fill="#f59e0b" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
       )}
 

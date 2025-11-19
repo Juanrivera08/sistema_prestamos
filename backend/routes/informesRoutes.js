@@ -9,8 +9,8 @@ const router = express.Router();
 // Obtener estadísticas generales
 router.get('/estadisticas', authenticateToken, async (req, res) => {
   try {
-    // Solo admin puede ver todas las estadísticas
-    const isAdmin = req.user.rol === 'administrador';
+    // Admin y trabajadores pueden ver todas las estadísticas
+    const isAdminOrTrabajador = req.user.rol === 'administrador' || req.user.rol === 'trabajador';
 
     // Total de recursos
     const [totalRecursos] = await pool.query('SELECT COUNT(*) as total FROM recursos');
@@ -24,7 +24,7 @@ router.get('/estadisticas', authenticateToken, async (req, res) => {
     let prestamosQuery = 'SELECT COUNT(*) as total FROM prestamos WHERE 1=1';
     const prestamosParams = [];
     
-    if (!isAdmin) {
+    if (!isAdminOrTrabajador) {
       prestamosQuery += ' AND usuario_id = ?';
       prestamosParams.push(req.user.id);
     }
@@ -33,7 +33,7 @@ router.get('/estadisticas', authenticateToken, async (req, res) => {
 
     // Préstamos por estado
     let prestamosEstadoQuery = 'SELECT estado, COUNT(*) as cantidad FROM prestamos WHERE 1=1';
-    if (!isAdmin) {
+    if (!isAdminOrTrabajador) {
       prestamosEstadoQuery += ' AND usuario_id = ?';
     }
     prestamosEstadoQuery += ' GROUP BY estado';
@@ -74,9 +74,9 @@ router.get('/estadisticas', authenticateToken, async (req, res) => {
       SELECT COUNT(*) as total 
       FROM prestamos 
       WHERE estado = 'activo' 
-      AND fecha_devolucion_prevista < CURDATE()
+      AND fecha_devolucion_prevista < NOW()
     `;
-    if (!isAdmin) {
+    if (!isAdminOrTrabajador) {
       prestamosVencidosQuery += ' AND usuario_id = ?';
     }
     const [prestamosVencidos] = await pool.query(prestamosVencidosQuery, prestamosParams);
@@ -92,7 +92,7 @@ router.get('/estadisticas', authenticateToken, async (req, res) => {
         vencidos: prestamosVencidos[0].total
       },
       recursosMasPrestados,
-      usuariosMasPrestamos: isAdmin ? usuariosMasPrestamos : []
+      usuariosMasPrestamos: isAdminOrTrabajador ? usuariosMasPrestamos : []
     });
   } catch (error) {
     console.error('Error al obtener estadísticas:', error);
@@ -126,8 +126,8 @@ router.get('/prestamos', authenticateToken, async (req, res) => {
     `;
     const params = [];
 
-    // Si es usuario estándar, solo ver sus préstamos
-    if (req.user.rol !== 'administrador') {
+    // Si es usuario estándar, solo ver sus préstamos. Admin y trabajadores ven todos
+    if (req.user.rol !== 'administrador' && req.user.rol !== 'trabajador') {
       query += ' AND p.usuario_id = ?';
       params.push(req.user.id);
     } else if (usuario_id) {

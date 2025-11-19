@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+import { Link } from 'react-router-dom';
 import QRCodeModal from '../components/QRCodeModal';
 import QRScanner from '../components/QRScanner';
 
@@ -17,7 +18,7 @@ const getImageUrl = (imagePath) => {
 };
 
 const Recursos = () => {
-  const { isAdmin, isTrabajador } = useAuth();
+  const { isAdmin, isTrabajador, isEstudiante } = useAuth();
   const [recursos, setRecursos] = useState([]);
   const [recursosAgrupados, setRecursosAgrupados] = useState([]);
   const [vistaAgrupada, setVistaAgrupada] = useState(true);
@@ -46,8 +47,12 @@ const Recursos = () => {
   });
 
   useEffect(() => {
+    // Si es estudiante y no hay filtro, mostrar solo disponibles
+    if (isEstudiante && !filtroEstado) {
+      setFiltroEstado('disponible');
+    }
     fetchRecursos();
-  }, [busqueda, filtroEstado, vistaAgrupada]);
+  }, [busqueda, filtroEstado, vistaAgrupada, isEstudiante]);
 
   const fetchCategorias = async () => {
     try {
@@ -233,7 +238,7 @@ const Recursos = () => {
             <span>{vistaAgrupada ? '📋' : '📦'}</span>
             <span>{vistaAgrupada ? 'Vista Individual' : 'Vista Agrupada'}</span>
           </button>
-        {isTrabajador && (
+        {isTrabajador && !isEstudiante && (
           <button
             onClick={() => {
               resetForm();
@@ -250,6 +255,13 @@ const Recursos = () => {
 
       {/* Filtros */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-6 transition-colors">
+        {isEstudiante && (
+          <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg">
+            <p className="text-sm text-blue-800 dark:text-blue-300">
+              ℹ️ Como estudiante, puedes ver los recursos disponibles. Para solicitar un préstamo, contacta con un trabajador o administrador.
+            </p>
+          </div>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <input
             type="text"
@@ -270,11 +282,16 @@ const Recursos = () => {
             value={filtroEstado}
             onChange={(e) => setFiltroEstado(e.target.value)}
             className="border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg px-4 py-2"
+            disabled={isEstudiante}
           >
             <option value="">Todos los estados</option>
             <option value="disponible">Disponible</option>
-            <option value="prestado">Prestado</option>
-            <option value="mantenimiento">Mantenimiento</option>
+            {!isEstudiante && (
+              <>
+                <option value="prestado">Prestado</option>
+                <option value="mantenimiento">Mantenimiento</option>
+              </>
+            )}
           </select>
         </div>
       </div>
@@ -350,6 +367,13 @@ const Recursos = () => {
                           >
                             👁️ Detalles
                           </button>
+                          <Link
+                            to={`/historial/recurso/${recurso.id}`}
+                            className="flex-1 bg-purple-600 dark:bg-purple-700 text-white px-3 py-1.5 rounded text-xs hover:bg-purple-700 dark:hover:bg-purple-600 transition-colors text-center"
+                            title="Ver historial"
+                          >
+                            📜 Historial
+                          </Link>
                           <button
                             onClick={() => handleShowQR(recurso)}
                             className="flex-1 bg-gray-600 dark:bg-gray-700 text-white px-3 py-1.5 rounded text-xs hover:bg-gray-700 dark:hover:bg-gray-600 transition-colors"
@@ -357,7 +381,7 @@ const Recursos = () => {
                           >
                             📱 QR
                           </button>
-                          {isTrabajador && (
+                          {isTrabajador && !isEstudiante && (
                             <>
                               <button
                                 onClick={() => handleEdit(recurso)}
@@ -437,6 +461,14 @@ const Recursos = () => {
                     <span>👁️</span>
                     <span>Ver Detalles</span>
                   </button>
+                  <Link
+                    to={`/historial/recurso/${recurso.id}`}
+                    className="flex-1 bg-purple-600 dark:bg-purple-700 text-white px-4 py-2 rounded hover:bg-purple-700 dark:hover:bg-purple-600 transition-colors flex items-center justify-center space-x-2"
+                    title="Ver historial"
+                  >
+                    <span>📜</span>
+                    <span>Historial</span>
+                  </Link>
                   <button
                     onClick={() => handleShowQR(recurso)}
                     className="flex-1 bg-gray-600 dark:bg-gray-700 text-white px-4 py-2 rounded hover:bg-gray-700 dark:hover:bg-gray-600 transition-colors flex items-center justify-center space-x-2"
@@ -447,7 +479,7 @@ const Recursos = () => {
                   </button>
                 </div>
 
-                {isTrabajador && (
+                {isTrabajador && !isEstudiante && (
                   <div className="mt-2 flex space-x-2">
                     <button
                       onClick={() => handleEdit(recurso)}
@@ -732,7 +764,7 @@ const Recursos = () => {
                   <span>📱</span>
                   <span>Ver Código QR</span>
                 </button>
-                {isTrabajador && (
+                {isTrabajador && !isEstudiante && (
                   <>
                     <button
                       onClick={() => {

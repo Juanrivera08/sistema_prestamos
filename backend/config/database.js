@@ -86,9 +86,9 @@ export const initDatabase = async () => {
         trabajador_id INT NOT NULL,
         trabajador_nombre VARCHAR(255) NOT NULL,
         trabajador_email VARCHAR(255) NOT NULL,
-        fecha_prestamo DATE NOT NULL,
-        fecha_devolucion_prevista DATE NOT NULL,
-        fecha_devolucion_real DATE,
+        fecha_prestamo DATETIME NOT NULL,
+        fecha_devolucion_prevista DATETIME NOT NULL,
+        fecha_devolucion_real DATETIME,
         estado ENUM('activo', 'devuelto', 'vencido') DEFAULT 'activo',
         observaciones TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -120,6 +120,33 @@ export const initDatabase = async () => {
       }
     }
 
+    // Migrar campos DATE a DATETIME si existen (para tablas existentes)
+    try {
+      // Verificar si las columnas son DATE y cambiarlas a DATETIME
+      const [columns] = await connection.query(`
+        SELECT COLUMN_TYPE 
+        FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_SCHEMA = DATABASE() 
+        AND TABLE_NAME = 'prestamos' 
+        AND COLUMN_NAME = 'fecha_prestamo'
+      `);
+      
+      if (columns.length > 0 && columns[0].COLUMN_TYPE === 'date') {
+        await connection.query(`
+          ALTER TABLE prestamos 
+          MODIFY COLUMN fecha_prestamo DATETIME NOT NULL,
+          MODIFY COLUMN fecha_devolucion_prevista DATETIME NOT NULL,
+          MODIFY COLUMN fecha_devolucion_real DATETIME
+        `);
+        console.log('Columnas de fecha migradas a DATETIME');
+      }
+    } catch (error) {
+      // Las columnas ya son DATETIME o hay otro error, ignorar si es por tipo incorrecto
+      if (!error.message.includes('Duplicate') && !error.message.includes('already exists')) {
+        console.warn('Advertencia al migrar columnas a DATETIME:', error.message);
+      }
+    }
+
     // Crear usuario administrador por defecto si no existe
     const adminEmail = process.env.ADMIN_EMAIL || 'admin@sistema.com';
     const [adminExists] = await connection.query(
@@ -140,6 +167,142 @@ export const initDatabase = async () => {
       );
       console.log(`Usuario administrador creado: ${adminEmail} / ${adminPassword}`);
       console.log('⚠️  IMPORTANTE: Cambia la contraseña del administrador después del primer inicio de sesión');
+    }
+
+    // Crear tabla de reservas
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS reservas (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        usuario_id INT NOT NULL,
+        recurso_id INT NOT NULL,
+        fecha_reserva DATETIME NOT NULL,
+        fecha_inicio_prevista DATETIME NOT NULL,
+        fecha_fin_prevista DATETIME NOT NULL,
+        estado ENUM('pendiente', 'confirmada', 'cancelada', 'completada') DEFAULT 'pendiente',
+        observaciones TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE,
+        FOREIGN KEY (recurso_id) REFERENCES recursos(id) ON DELETE CASCADE,
+        INDEX idx_usuario (usuario_id),
+        INDEX idx_recurso (recurso_id),
+        INDEX idx_estado (estado),
+        INDEX idx_fecha_reserva (fecha_reserva)
+      )
+    `);
+
+    // Crear tabla de notificaciones
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS notificaciones (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        usuario_id INT NOT NULL,
+        tipo ENUM('prestamo_vencido', 'prestamo_proximo_vencer', 'devolucion_registrada', 'reserva_confirmada', 'reserva_cancelada', 'multa_aplicada', 'sistema') NOT NULL,
+        titulo VARCHAR(255) NOT NULL,
+        mensaje TEXT NOT NULL,
+        leida BOOLEAN DEFAULT FALSE,
+        relacion_id INT,
+        relacion_tipo VARCHAR(50),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE,
+        INDEX idx_usuario (usuario_id),
+        INDEX idx_leida (leida),
+        INDEX idx_tipo (tipo)
+      )
+    `);
+
+    // Crear tabla de auditoría
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS auditoria (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        usuario_id INT,
+        accion VARCHAR(100) NOT NULL,
+        tabla_afectada VARCHAR(50) NOT NULL,
+        registro_id INT,
+        datos_anteriores JSON,
+        datos_nuevos JSON,
+        ip_address VARCHAR(45),
+        user_agent TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_usuario (usuario_id),
+        INDEX idx_tabla (tabla_afectada),
+        INDEX idx_accion (accion),
+        INDEX idx_fecha (created_at)
+      )
+    `);
+
+    // Crear tabla de multas
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS multas (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        prestamo_id INT NOT NULL,
+        usuario_id INT NOT NULL,
+        monto DECIMAL(10, 2) NOT NULL,
+        dias_retraso INT NOT NULL,
+        estado ENUM('pendiente', 'pagada', 'cancelada') DEFAULT 'pendiente',
+        fecha_pago DATETIME,
+        observaciones TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (prestamo_id) REFERENCES prestamos(id) ON DELETE CASCADE,
+        FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE,
+        INDEX idx_prestamo (prestamo_id),
+        INDEX idx_usuario (usuario_id),
+        INDEX idx_estado (estado)
+      )
+    `);
+
+    // Crear tabla de configuraciones del sistema
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS configuraciones (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        clave VARCHAR(100) UNIQUE NOT NULL,
+        valor TEXT,
+        tipo VARCHAR(50) DEFAULT 'string',
+        descripcion TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_clave (clave)
+      )
+    `);
+
+    // Insertar configuraciones por defecto
+    try {
+      await connection.query(`
+        INSERT IGNORE INTO configuraciones (clave, valor, tipo, descripcion) VALUES
+        ('dias_antes_notificacion', '1', 'number', 'Días antes de vencer para enviar notificación'),
+        ('monto_multa_por_dia', '5000', 'number', 'Monto de multa por día de retraso'),
+        ('max_prestamos_simultaneos', '3', 'number', 'Máximo de préstamos simultáneos por usuario'),
+        ('dias_maximo_prestamo', '7', 'number', 'Días máximos de duración de préstamo'),
+        ('habilitar_multas', 'true', 'boolean', 'Habilitar sistema de multas'),
+        ('habilitar_reservas', 'true', 'boolean', 'Habilitar sistema de reservas')
+      `);
+    } catch (error) {
+      // Las configuraciones ya existen, ignorar
+    }
+
+    // Agregar columna deleted_at para soft delete en recursos
+    try {
+      await connection.query(`
+        ALTER TABLE recursos 
+        ADD COLUMN deleted_at DATETIME NULL
+      `);
+    } catch (error) {
+      // La columna ya existe, ignorar
+      if (!error.message.includes('Duplicate column name')) {
+        console.warn('Advertencia al agregar columna deleted_at:', error.message);
+      }
+    }
+
+    // Agregar columna limite_prestamos_simultaneos en usuarios
+    try {
+      await connection.query(`
+        ALTER TABLE usuarios 
+        ADD COLUMN limite_prestamos_simultaneos INT DEFAULT 3
+      `);
+    } catch (error) {
+      if (!error.message.includes('Duplicate column name')) {
+        console.warn('Advertencia al agregar columna limite_prestamos_simultaneos:', error.message);
+      }
     }
 
     connection.release();

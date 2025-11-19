@@ -1,7 +1,7 @@
 import express from 'express';
 import pool from '../config/database.js';
-import { authenticateToken, requireAdmin } from '../middleware/auth.js';
-import { isValidDate } from '../utils/validators.js';
+import { authenticateToken, requireAdmin, requireAdminOrTrabajador } from '../middleware/auth.js';
+import { isValidDate, isValidDateTime } from '../utils/validators.js';
 
 const router = express.Router();
 
@@ -13,10 +13,25 @@ router.get('/', authenticateToken, async (req, res) => {
       `UPDATE prestamos 
        SET estado = 'vencido' 
        WHERE estado = 'activo' 
-       AND fecha_devolucion_prevista < CURDATE()`
+       AND fecha_devolucion_prevista < NOW()`
     );
 
-    const { estado, usuario_id, recurso_id, fecha_inicio, fecha_fin } = req.query;
+    const { 
+      estado, 
+      usuario_id, 
+      recurso_id, 
+      fecha_inicio, 
+      fecha_fin,
+      search,
+      page = 1,
+      limit = 10,
+      sortBy = 'created_at',
+      sortOrder = 'DESC'
+    } = req.query;
+    
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const offset = (pageNum - 1) * limitNum;
     
     let query = `
       SELECT 
@@ -37,48 +52,119 @@ router.get('/', authenticateToken, async (req, res) => {
       WHERE 1=1
     `;
     const params = [];
+    const countParams = [];
 
     // Si es usuario estándar, solo ver sus préstamos. Admin y trabajadores ven todos
     if (req.user.rol !== 'administrador' && req.user.rol !== 'trabajador') {
       query += ' AND p.usuario_id = ?';
       params.push(req.user.id);
+      countParams.push(req.user.id);
     } else if (usuario_id) {
       query += ' AND p.usuario_id = ?';
       params.push(usuario_id);
+      countParams.push(usuario_id);
     }
 
     if (estado) {
       query += ' AND p.estado = ?';
       params.push(estado);
+      countParams.push(estado);
     }
 
     if (recurso_id) {
       query += ' AND p.recurso_id = ?';
       params.push(recurso_id);
+      countParams.push(recurso_id);
     }
 
     if (fecha_inicio) {
       query += ' AND p.fecha_prestamo >= ?';
       params.push(fecha_inicio);
+      countParams.push(fecha_inicio);
     }
 
     if (fecha_fin) {
       query += ' AND p.fecha_prestamo <= ?';
       params.push(fecha_fin);
+      countParams.push(fecha_fin);
     }
 
-    query += ' ORDER BY p.created_at DESC';
+    // Búsqueda avanzada
+    if (search) {
+      query += ` AND (
+        u.nombre_completo LIKE ? OR 
+        u.email LIKE ? OR 
+        u.codigo LIKE ? OR
+        r.nombre LIKE ? OR 
+        r.codigo LIKE ? OR
+        p.observaciones LIKE ?
+      )`;
+      const searchTerm = `%${search}%`;
+      params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+      countParams.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+    }
+
+    // Contar total de registros
+    let countQuery = `SELECT COUNT(*) as total FROM prestamos p 
+      INNER JOIN usuarios u ON p.usuario_id = u.id 
+      INNER JOIN recursos r ON p.recurso_id = r.id 
+      WHERE 1=1`;
+    
+    // Aplicar mismos filtros al count
+    if (req.user.rol !== 'administrador' && req.user.rol !== 'trabajador') {
+      countQuery += ' AND p.usuario_id = ?';
+    } else if (usuario_id) {
+      countQuery += ' AND p.usuario_id = ?';
+    }
+    if (estado) countQuery += ' AND p.estado = ?';
+    if (recurso_id) countQuery += ' AND p.recurso_id = ?';
+    if (fecha_inicio) countQuery += ' AND p.fecha_prestamo >= ?';
+    if (fecha_fin) countQuery += ' AND p.fecha_prestamo <= ?';
+    if (search) {
+      countQuery += ` AND (
+        u.nombre_completo LIKE ? OR 
+        u.email LIKE ? OR 
+        u.codigo LIKE ? OR
+        r.nombre LIKE ? OR 
+        r.codigo LIKE ? OR
+        p.observaciones LIKE ?
+      )`;
+    }
+
+    const [countResult] = await pool.query(countQuery, countParams);
+    const total = countResult[0].total;
+    const totalPages = Math.ceil(total / limitNum);
+
+    // Ordenamiento
+    const validSortFields = ['created_at', 'fecha_prestamo', 'fecha_devolucion_prevista', 'estado'];
+    const validSortOrder = ['ASC', 'DESC'];
+    const sortField = validSortFields.includes(sortBy) ? sortBy : 'created_at';
+    const order = validSortOrder.includes(sortOrder.toUpperCase()) ? sortOrder.toUpperCase() : 'DESC';
+    
+    query += ` ORDER BY p.${sortField} ${order} LIMIT ? OFFSET ?`;
+    params.push(limitNum, offset);
 
     const [prestamos] = await pool.query(query, params);
-    res.json(prestamos);
+    
+    res.json({
+      prestamos,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages,
+        hasNextPage: pageNum < totalPages,
+        hasPrevPage: pageNum > 1
+      }
+    });
   } catch (error) {
     console.error('Error al obtener préstamos:', error);
     res.status(500).json({ message: 'Error al obtener préstamos' });
   }
 });
 
-// Obtener un préstamo por ID
-router.get('/:id', authenticateToken, async (req, res) => {
+// Crear un nuevo préstamo (solo trabajadores y admin)
+router.post('/', authenticateToken, requireAdminOrTrabajador, async (req, res) => {
   try {
     let query = `
       SELECT 
@@ -120,7 +206,8 @@ router.get('/:id', authenticateToken, async (req, res) => {
 });
 
 // Crear préstamo(s) - soporta uno o múltiples recursos
-router.post('/', authenticateToken, async (req, res) => {
+// Crear un nuevo préstamo (solo trabajadores y admin)
+router.post('/', authenticateToken, requireAdminOrTrabajador, async (req, res) => {
   try {
     const { usuario_id, recurso_id, recursos_ids, fecha_prestamo, fecha_devolucion_prevista, observaciones } = req.body;
 
@@ -138,10 +225,34 @@ router.post('/', authenticateToken, async (req, res) => {
       });
     }
 
-    // Admin y trabajadores pueden crear préstamos para otros usuarios
-    const finalUsuarioId = (req.user.rol === 'administrador' || req.user.rol === 'trabajador') 
-      ? usuario_id 
-      : req.user.id;
+    // Solo admin y trabajadores pueden crear préstamos
+    const finalUsuarioId = usuario_id;
+
+    // Verificar límite de préstamos simultáneos
+    const [configLimite] = await pool.query(
+      "SELECT valor FROM configuraciones WHERE clave = 'max_prestamos_simultaneos'"
+    );
+    const limiteGlobal = configLimite.length > 0 ? parseInt(configLimite[0].valor) : 3;
+    
+    const [usuarioInfo] = await pool.query(
+      'SELECT limite_prestamos_simultaneos FROM usuarios WHERE id = ?',
+      [finalUsuarioId]
+    );
+    const limiteUsuario = usuarioInfo.length > 0 && usuarioInfo[0].limite_prestamos_simultaneos 
+      ? usuarioInfo[0].limite_prestamos_simultaneos 
+      : limiteGlobal;
+
+    // Contar préstamos activos del usuario
+    const [prestamosActivos] = await pool.query(
+      'SELECT COUNT(*) as total FROM prestamos WHERE usuario_id = ? AND estado = "activo"',
+      [finalUsuarioId]
+    );
+
+    if (prestamosActivos[0].total + recursosIds.length > limiteUsuario) {
+      return res.status(400).json({ 
+        message: `El usuario ha alcanzado el límite de ${limiteUsuario} préstamos simultáneos. Actualmente tiene ${prestamosActivos[0].total} préstamo(s) activo(s).` 
+      });
+    }
 
     // Obtener información del trabajador autenticado (quien hace el préstamo)
     const [trabajadorInfo] = await pool.query(
@@ -165,22 +276,22 @@ router.post('/', authenticateToken, async (req, res) => {
       return res.status(404).json({ message: 'Usuario no encontrado' });
     }
 
-    // Validar formato de fechas
-    if (!isValidDate(fecha_prestamo)) {
-      return res.status(400).json({ message: 'Formato de fecha de préstamo inválido (debe ser YYYY-MM-DD)' });
+    // Validar formato de fechas/datetime
+    if (!isValidDateTime(fecha_prestamo)) {
+      return res.status(400).json({ message: 'Formato de fecha y hora de préstamo inválido (debe ser YYYY-MM-DD HH:MM)' });
     }
 
-    if (!isValidDate(fecha_devolucion_prevista)) {
-      return res.status(400).json({ message: 'Formato de fecha de devolución inválido (debe ser YYYY-MM-DD)' });
+    if (!isValidDateTime(fecha_devolucion_prevista)) {
+      return res.status(400).json({ message: 'Formato de fecha y hora de devolución inválido (debe ser YYYY-MM-DD HH:MM)' });
     }
 
-    // Validar fechas
-    const fechaPrestamo = new Date(fecha_prestamo);
-    const fechaDevolucion = new Date(fecha_devolucion_prevista);
+    // Validar fechas/datetime
+    const fechaPrestamo = new Date(fecha_prestamo.replace(' ', 'T'));
+    const fechaDevolucion = new Date(fecha_devolucion_prevista.replace(' ', 'T'));
 
     if (fechaDevolucion <= fechaPrestamo) {
       return res.status(400).json({ 
-        message: 'La fecha de devolución debe ser posterior a la fecha de préstamo' 
+        message: 'La fecha y hora de devolución debe ser posterior a la fecha y hora de préstamo' 
       });
     }
 
@@ -319,16 +430,34 @@ router.put('/:id/devolver', authenticateToken, async (req, res) => {
 
     const prestamo = prestamos[0];
 
-    // Solo admin o el usuario dueño del préstamo puede devolver
-    if (req.user.rol !== 'administrador' && prestamo.usuario_id !== req.user.id) {
-      return res.status(403).json({ message: 'Acceso denegado' });
+    // Solo admin y trabajadores pueden devolver préstamos
+    if (req.user.rol !== 'administrador' && req.user.rol !== 'trabajador') {
+      return res.status(403).json({ 
+        message: 'Acceso denegado. Solo administradores y trabajadores pueden devolver préstamos' 
+      });
     }
 
     if (prestamo.estado === 'devuelto') {
       return res.status(400).json({ message: 'El préstamo ya fue devuelto' });
     }
 
-    const fechaDevolucion = fecha_devolucion_real || new Date().toISOString().split('T')[0];
+    // Si no se proporciona fecha_devolucion_real, usar la fecha y hora actual
+    let fechaDevolucion = fecha_devolucion_real;
+    if (!fechaDevolucion) {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      const hours = String(now.getHours()).padStart(2, '0');
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      fechaDevolucion = `${year}-${month}-${day} ${hours}:${minutes}`;
+    } else if (!fechaDevolucion.includes(' ')) {
+      // Si viene solo la fecha, agregar la hora actual
+      const now = new Date();
+      const hours = String(now.getHours()).padStart(2, '0');
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      fechaDevolucion = `${fechaDevolucion} ${hours}:${minutes}`;
+    }
 
     // Actualizar préstamo
     await pool.query(
@@ -375,6 +504,71 @@ router.put('/:id/devolver', authenticateToken, async (req, res) => {
   }
 });
 
+// Renovar préstamo (extender fecha de devolución)
+router.put('/:id/renovar', authenticateToken, async (req, res) => {
+  try {
+    const { fecha_devolucion_prevista_nueva, observaciones } = req.body;
+
+    if (!fecha_devolucion_prevista_nueva) {
+      return res.status(400).json({ message: 'Nueva fecha de devolución es requerida' });
+    }
+
+    if (!isValidDateTime(fecha_devolucion_prevista_nueva)) {
+      return res.status(400).json({ message: 'Formato de fecha inválido' });
+    }
+
+    const [prestamos] = await pool.query('SELECT * FROM prestamos WHERE id = ?', [req.params.id]);
+    if (prestamos.length === 0) {
+      return res.status(404).json({ message: 'Préstamo no encontrado' });
+    }
+
+    const prestamo = prestamos[0];
+
+    // Solo admin y trabajadores pueden renovar préstamos
+    if (req.user.rol !== 'administrador' && req.user.rol !== 'trabajador') {
+      return res.status(403).json({ message: 'Acceso denegado. Solo administradores y trabajadores pueden renovar préstamos' });
+    }
+
+    if (prestamo.estado !== 'activo') {
+      return res.status(400).json({ message: 'Solo se pueden renovar préstamos activos' });
+    }
+
+    const nuevaFecha = new Date(fecha_devolucion_prevista_nueva.replace(' ', 'T'));
+    const fechaActual = new Date(prestamo.fecha_devolucion_prevista.replace(' ', 'T'));
+
+    if (nuevaFecha <= fechaActual) {
+      return res.status(400).json({ message: 'La nueva fecha debe ser posterior a la fecha actual de devolución' });
+    }
+
+    // Verificar límite máximo de días
+    const [configMaxDias] = await pool.query(
+      "SELECT valor FROM configuraciones WHERE clave = 'dias_maximo_prestamo'"
+    );
+    const maxDias = configMaxDias.length > 0 ? parseInt(configMaxDias[0].valor) : 7;
+    const fechaPrestamo = new Date(prestamo.fecha_prestamo.replace(' ', 'T'));
+    const diasTotales = Math.floor((nuevaFecha - fechaPrestamo) / (1000 * 60 * 60 * 24));
+
+    if (diasTotales > maxDias) {
+      return res.status(400).json({ 
+        message: `El préstamo no puede exceder ${maxDias} días. La nueva fecha resultaría en ${diasTotales} días.` 
+      });
+    }
+
+    await pool.query(
+      `UPDATE prestamos 
+       SET fecha_devolucion_prevista = ?, 
+           observaciones = CONCAT(COALESCE(observaciones, ''), '\nRenovado el ', NOW(), ': ', COALESCE(?, ''))
+       WHERE id = ?`,
+      [fecha_devolucion_prevista_nueva, observaciones || 'Sin observaciones', req.params.id]
+    );
+
+    res.json({ message: 'Préstamo renovado exitosamente' });
+  } catch (error) {
+    console.error('Error al renovar préstamo:', error);
+    res.status(500).json({ message: 'Error al renovar préstamo' });
+  }
+});
+
 // Actualizar préstamo (solo admin)
 router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
@@ -393,6 +587,26 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
 
     if (prestamo.estado === 'devuelto') {
       return res.status(400).json({ message: 'No se puede modificar un préstamo devuelto' });
+    }
+
+    // Validar formato de datetime si se proporcionan
+    if (fecha_prestamo && !isValidDateTime(fecha_prestamo)) {
+      return res.status(400).json({ message: 'Formato de fecha y hora de préstamo inválido (debe ser YYYY-MM-DD HH:MM)' });
+    }
+
+    if (fecha_devolucion_prevista && !isValidDateTime(fecha_devolucion_prevista)) {
+      return res.status(400).json({ message: 'Formato de fecha y hora de devolución inválido (debe ser YYYY-MM-DD HH:MM)' });
+    }
+
+    // Validar que la fecha de devolución sea posterior a la de préstamo
+    if (fecha_prestamo && fecha_devolucion_prevista) {
+      const fechaPrestamo = new Date(fecha_prestamo.replace(' ', 'T'));
+      const fechaDevolucion = new Date(fecha_devolucion_prevista.replace(' ', 'T'));
+      if (fechaDevolucion <= fechaPrestamo) {
+        return res.status(400).json({ 
+          message: 'La fecha y hora de devolución debe ser posterior a la fecha y hora de préstamo' 
+        });
+      }
     }
 
     await pool.query(

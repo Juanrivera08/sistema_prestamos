@@ -252,6 +252,13 @@ const Usuarios = () => {
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                  <Link
+                    to={`/historial/usuario/${usuario.id}`}
+                    className="text-purple-600 dark:text-purple-400 hover:text-purple-900 dark:hover:text-purple-300 mr-4 transition-colors"
+                    title="Ver historial de préstamos"
+                  >
+                    📜 Historial
+                  </Link>
                   {isAdmin && (
                     <>
                       <button

@@ -5,7 +5,7 @@ import { format } from 'date-fns';
 import QRCodeModal from '../components/QRCodeModal';
 
 const Prestamos = () => {
-  const { user, isAdmin, isTrabajador } = useAuth();
+  const { user, isAdmin, isTrabajador, isEstudiante } = useAuth();
   const [prestamos, setPrestamos] = useState([]);
   const [recursos, setRecursos] = useState([]);
   const [recursosAgrupados, setRecursosAgrupados] = useState([]);
@@ -20,6 +20,7 @@ const Prestamos = () => {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [showDevolucionModal, setShowDevolucionModal] = useState(false);
+  const [showRenovarModal, setShowRenovarModal] = useState(false);
   const [showQRModal, setShowQRModal] = useState(false);
   const [qrData, setQrData] = useState(null);
   const [selectedPrestamo, setSelectedPrestamo] = useState(null);
@@ -28,23 +29,46 @@ const Prestamos = () => {
     usuario_id: '',
     recurso_id: '',
     fecha_inicio: '',
-    fecha_fin: ''
+    fecha_fin: '',
+    search: ''
+  });
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 10,
+    total: 0,
+    totalPages: 0
   });
   const [formData, setFormData] = useState({
     usuario_id: '',
     recursos_ids: [],
     fecha_prestamo: new Date().toISOString().split('T')[0],
+    hora_prestamo: new Date().toTimeString().slice(0, 5), // HH:MM
     fecha_devolucion_prevista: '',
+    hora_devolucion_prevista: '',
+    observaciones: ''
+  });
+  const [renovarData, setRenovarData] = useState({
+    fecha_devolucion_prevista_nueva: '',
+    hora_devolucion_prevista_nueva: '',
     observaciones: ''
   });
 
   useEffect(() => {
-    fetchPrestamos();
+    fetchPrestamos(1);
     fetchRecursos();
     if (isTrabajador) {
       fetchUsuarios();
     }
-  }, [isTrabajador, filtros]);
+  }, [isTrabajador]);
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (filtros.search !== undefined) {
+        fetchPrestamos(1);
+      }
+    }, 500); // Debounce de 500ms para búsqueda
+    return () => clearTimeout(timeoutId);
+  }, [filtros.search]);
 
   // Filtrar usuarios según búsqueda
   useEffect(() => {
@@ -60,15 +84,21 @@ const Prestamos = () => {
     }
   }, [busquedaUsuario, usuarios]);
 
-  const fetchPrestamos = async () => {
+  const fetchPrestamos = async (page = pagination.page) => {
     try {
+      setLoading(true);
       const params = new URLSearchParams();
       Object.keys(filtros).forEach(key => {
         if (filtros[key]) params.append(key, filtros[key]);
       });
+      params.append('page', page);
+      params.append('limit', pagination.limit);
 
       const response = await axios.get(`/api/prestamos?${params}`);
-      setPrestamos(response.data);
+      setPrestamos(response.data.prestamos || response.data);
+      if (response.data.pagination) {
+        setPagination(response.data.pagination);
+      }
     } catch (error) {
       console.error('Error al obtener préstamos:', error);
     } finally {
@@ -187,12 +217,27 @@ const Prestamos = () => {
       return;
     }
 
+    // Validar que fecha y hora estén completas
+    if (!formData.fecha_prestamo || !formData.hora_prestamo) {
+      alert('Por favor, completa la fecha y hora de préstamo');
+      return;
+    }
+
+    if (!formData.fecha_devolucion_prevista || !formData.hora_devolucion_prevista) {
+      alert('Por favor, completa la fecha y hora de devolución prevista');
+      return;
+    }
+
     try {
+      // Combinar fecha y hora para enviar al backend (formato: YYYY-MM-DD HH:MM)
+      const fechaPrestamoCompleta = `${formData.fecha_prestamo} ${formData.hora_prestamo}`;
+      const fechaDevolucionCompleta = `${formData.fecha_devolucion_prevista} ${formData.hora_devolucion_prevista}`;
+      
       const dataToSend = {
         usuario_id: formData.usuario_id,
         recursos_ids: formData.recursos_ids,
-        fecha_prestamo: formData.fecha_prestamo,
-        fecha_devolucion_prevista: formData.fecha_devolucion_prevista,
+        fecha_prestamo: fechaPrestamoCompleta,
+        fecha_devolucion_prevista: fechaDevolucionCompleta,
         observaciones: formData.observaciones
       };
 
@@ -217,8 +262,14 @@ const Prestamos = () => {
   const handleDevolver = async (e) => {
     e.preventDefault();
     try {
+      // Usar fecha y hora actual para la devolución
+      const now = new Date();
+      const fecha = now.toISOString().split('T')[0];
+      const hora = now.toTimeString().slice(0, 5);
+      const fechaDevolucionCompleta = `${fecha} ${hora}`;
+      
       await axios.put(`/api/prestamos/${selectedPrestamo.id}/devolver`, {
-        fecha_devolucion_real: new Date().toISOString().split('T')[0],
+        fecha_devolucion_real: fechaDevolucionCompleta,
         observaciones: formData.observaciones
       });
       setShowDevolucionModal(false);
@@ -231,12 +282,39 @@ const Prestamos = () => {
     }
   };
 
+  const handleRenovar = async (e) => {
+    e.preventDefault();
+    try {
+      const fechaDevolucionCompleta = `${renovarData.fecha_devolucion_prevista_nueva} ${renovarData.hora_devolucion_prevista_nueva}`;
+      
+      await axios.put(`/api/prestamos/${selectedPrestamo.id}/renovar`, {
+        fecha_devolucion_prevista_nueva: fechaDevolucionCompleta,
+        observaciones: renovarData.observaciones
+      });
+      
+      setShowRenovarModal(false);
+      setSelectedPrestamo(null);
+      setRenovarData({
+        fecha_devolucion_prevista_nueva: '',
+        hora_devolucion_prevista_nueva: '',
+        observaciones: ''
+      });
+      fetchPrestamos();
+      alert('Préstamo renovado exitosamente');
+    } catch (error) {
+      alert(error.response?.data?.message || 'Error al renovar préstamo');
+    }
+  };
+
   const resetForm = () => {
+    const now = new Date();
     setFormData({
       usuario_id: '',
       recursos_ids: [],
-      fecha_prestamo: new Date().toISOString().split('T')[0],
+      fecha_prestamo: now.toISOString().split('T')[0],
+      hora_prestamo: now.toTimeString().slice(0, 5),
       fecha_devolucion_prevista: '',
+      hora_devolucion_prevista: '',
       observaciones: ''
     });
     setSelectorRecursoAbierto(false);
@@ -256,7 +334,13 @@ const Prestamos = () => {
   };
 
   const isVencido = (fecha) => {
-    return new Date(fecha) < new Date() && fecha;
+    if (!fecha) return false;
+    try {
+      const fechaPrestamo = new Date(fecha.replace(' ', 'T'));
+      return fechaPrestamo < new Date() && fecha;
+    } catch {
+      return new Date(fecha) < new Date() && fecha;
+    }
   };
 
   const handleShowQR = (prestamo) => {
@@ -271,8 +355,22 @@ const Prestamos = () => {
       recurso: recurso ? recurso.nombre : 'N/A',
       recurso_codigo: recurso ? recurso.codigo : 'N/A',
       usuario: usuario ? usuario.nombre_completo : 'N/A',
-      fecha_prestamo: prestamo.fecha_prestamo,
-      fecha_devolucion_prevista: prestamo.fecha_devolucion_prevista,
+      fecha_prestamo: prestamo.fecha_prestamo ? (() => {
+        try {
+          const fecha = new Date(prestamo.fecha_prestamo.replace(' ', 'T'));
+          return format(fecha, 'dd/MM/yyyy HH:mm');
+        } catch {
+          return prestamo.fecha_prestamo;
+        }
+      })() : 'N/A',
+      fecha_devolucion_prevista: prestamo.fecha_devolucion_prevista ? (() => {
+        try {
+          const fecha = new Date(prestamo.fecha_devolucion_prevista.replace(' ', 'T'));
+          return format(fecha, 'dd/MM/yyyy HH:mm');
+        } catch {
+          return prestamo.fecha_devolucion_prevista;
+        }
+      })() : 'N/A',
       estado: prestamo.estado,
       url: `${window.location.origin}/prestamos?id=${prestamo.id}`
     };
@@ -292,21 +390,41 @@ const Prestamos = () => {
     <div className="px-4 py-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Préstamos</h1>
-        <button
-          onClick={() => {
-            resetForm();
-            setFormData(prev => ({ ...prev, usuario_id: isTrabajador ? '' : user.id }));
-            fetchRecursos(); // Recargar recursos al abrir el modal
-            setShowModal(true);
-          }}
-          className="bg-primary-600 dark:bg-primary-500 text-white px-4 py-2 rounded-lg hover:bg-primary-700 dark:hover:bg-primary-600 transition-colors"
-        >
-          + Nuevo Préstamo
-        </button>
+        {!isEstudiante && (
+          <button
+            onClick={() => {
+              resetForm();
+              setFormData(prev => ({ ...prev, usuario_id: isTrabajador ? '' : user.id }));
+              fetchRecursos(); // Recargar recursos al abrir el modal
+              setShowModal(true);
+            }}
+            className="bg-primary-600 dark:bg-primary-500 text-white px-4 py-2 rounded-lg hover:bg-primary-700 dark:hover:bg-primary-600 transition-colors"
+          >
+            + Nuevo Préstamo
+          </button>
+        )}
       </div>
 
       {/* Filtros */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-6 transition-colors">
+        {/* Búsqueda general */}
+        <div className="mb-4">
+          <input
+            type="text"
+            placeholder="Buscar por nombre, email, código, recurso u observaciones..."
+            value={filtros.search}
+            onChange={(e) => {
+              setFiltros({ ...filtros, search: e.target.value });
+              setPagination({ ...pagination, page: 1 });
+            }}
+            onKeyPress={(e) => {
+              if (e.key === 'Enter') {
+                fetchPrestamos(1);
+              }
+            }}
+            className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg px-4 py-2"
+          />
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
           {isTrabajador && (
             <select
@@ -360,31 +478,31 @@ const Prestamos = () => {
       </div>
 
       {/* Lista de préstamos */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden transition-colors">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow transition-colors overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
           <thead className="bg-gray-50 dark:bg-gray-700">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider min-w-[150px]">
                 Recurso
               </th>
               {isTrabajador && (
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider min-w-[180px]">
                   Usuario
                 </th>
               )}
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider min-w-[180px]">
                 Trabajador
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider min-w-[140px]">
                 Fecha Préstamo
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider min-w-[160px]">
                 Fecha Devolución
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider min-w-[120px]">
                 Estado
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider min-w-[100px]">
                 Acciones
               </th>
             </tr>
@@ -392,36 +510,59 @@ const Prestamos = () => {
           <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
             {prestamos.map((prestamo) => (
               <tr key={prestamo.id} className={isVencido(prestamo.fecha_devolucion_prevista) && prestamo.estado === 'activo' ? 'bg-red-50 dark:bg-red-900/20' : ''}>
-                <td className="px-6 py-4 whitespace-nowrap">
+                <td className="px-4 py-4 min-w-[150px]">
                   <div className="text-sm font-medium text-gray-900 dark:text-white">{prestamo.recurso_nombre}</div>
-                  <div className="text-sm text-gray-500 dark:text-gray-400">{prestamo.recurso_codigo}</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">Código: {prestamo.recurso_codigo}</div>
                 </td>
                 {isTrabajador && (
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-4 py-4 min-w-[180px]">
                     <div className="text-sm text-gray-900 dark:text-white">{prestamo.usuario_nombre}</div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">{prestamo.usuario_email}</div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400 break-words">{prestamo.usuario_email}</div>
                   </td>
                 )}
-                <td className="px-6 py-4 whitespace-nowrap">
+                <td className="px-4 py-4 min-w-[180px]">
                   <div className="text-sm font-medium text-gray-900 dark:text-white">
                     {prestamo.trabajador_nombre || 'N/A'}
                   </div>
-                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                  <div className="text-sm text-gray-500 dark:text-gray-400 break-words">
                     {prestamo.trabajador_email || ''}
                   </div>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                  {format(new Date(prestamo.fecha_prestamo), 'dd/MM/yyyy')}
+                <td className="px-4 py-4 text-sm text-gray-500 dark:text-gray-400 min-w-[140px]">
+                  {(() => {
+                    try {
+                      const fecha = new Date(prestamo.fecha_prestamo.replace(' ', 'T'));
+                      return format(fecha, 'dd/MM/yyyy HH:mm');
+                    } catch {
+                      return format(new Date(prestamo.fecha_prestamo), 'dd/MM/yyyy');
+                    }
+                  })()}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                  {format(new Date(prestamo.fecha_devolucion_prevista), 'dd/MM/yyyy')}
-                    {prestamo.fecha_devolucion_real && (
-                      <div className="text-xs text-green-600 dark:text-green-400">
-                        Devuelto: {format(new Date(prestamo.fecha_devolucion_real), 'dd/MM/yyyy')}
+                <td className="px-4 py-4 text-sm text-gray-500 dark:text-gray-400 min-w-[160px]">
+                  <div>
+                    {(() => {
+                      try {
+                        const fecha = new Date(prestamo.fecha_devolucion_prevista.replace(' ', 'T'));
+                        return format(fecha, 'dd/MM/yyyy HH:mm');
+                      } catch {
+                        return format(new Date(prestamo.fecha_devolucion_prevista), 'dd/MM/yyyy');
+                      }
+                    })()}
+                  </div>
+                  {prestamo.fecha_devolucion_real && (
+                    <div className="text-xs text-green-600 dark:text-green-400 mt-1">
+                      Devuelto: {(() => {
+                        try {
+                          const fecha = new Date(prestamo.fecha_devolucion_real.replace(' ', 'T'));
+                          return format(fecha, 'dd/MM/yyyy HH:mm');
+                        } catch {
+                          return format(new Date(prestamo.fecha_devolucion_real), 'dd/MM/yyyy');
+                        }
+                      })()}
                     </div>
                   )}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap">
+                <td className="px-4 py-4 min-w-[120px]">
                   <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getEstadoColor(prestamo.estado)}`}>
                     {prestamo.estado}
                   </span>
@@ -429,7 +570,7 @@ const Prestamos = () => {
                     <div className="text-xs text-red-600 dark:text-red-400 mt-1">⚠️ Vencido</div>
                   )}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                <td className="px-4 py-4 text-sm font-medium min-w-[100px]">
                   <button
                     onClick={() => handleShowQR(prestamo)}
                     className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 mr-4 transition-colors"
@@ -437,17 +578,36 @@ const Prestamos = () => {
                   >
                     📱 QR
                   </button>
-                  {prestamo.estado === 'activo' && (
-                    <button
-                      onClick={() => {
-                        setSelectedPrestamo(prestamo);
-                        setFormData({ observaciones: '' });
-                        setShowDevolucionModal(true);
-                      }}
-                      className="text-green-600 dark:text-green-400 hover:text-green-900 dark:hover:text-green-300 transition-colors"
-                    >
-                      Devolver
-                    </button>
+                  {prestamo.estado === 'activo' && !isEstudiante && (
+                    <>
+                      <button
+                        onClick={() => {
+                          setSelectedPrestamo(prestamo);
+                          const fechaActual = new Date(prestamo.fecha_devolucion_prevista.replace(' ', 'T'));
+                          fechaActual.setDate(fechaActual.getDate() + 1);
+                          setRenovarData({
+                            fecha_devolucion_prevista_nueva: fechaActual.toISOString().split('T')[0],
+                            hora_devolucion_prevista_nueva: fechaActual.toTimeString().slice(0, 5),
+                            observaciones: ''
+                          });
+                          setShowRenovarModal(true);
+                        }}
+                        className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 mr-4 transition-colors"
+                        title="Renovar préstamo"
+                      >
+                        🔄 Renovar
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSelectedPrestamo(prestamo);
+                          setFormData({ observaciones: '' });
+                          setShowDevolucionModal(true);
+                        }}
+                        className="text-green-600 dark:text-green-400 hover:text-green-900 dark:hover:text-green-300 transition-colors"
+                      >
+                        Devolver
+                      </button>
+                    </>
                   )}
                 </td>
               </tr>
@@ -456,9 +616,61 @@ const Prestamos = () => {
         </table>
       </div>
 
-      {prestamos.length === 0 && (
+      {prestamos.length === 0 && !loading && (
         <div className="text-center py-12 text-gray-500 dark:text-gray-400">
           No se encontraron préstamos
+        </div>
+      )}
+
+      {/* Paginación */}
+      {pagination.totalPages > 1 && (
+        <div className="mt-6 flex justify-between items-center bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+          <div className="text-sm text-gray-700 dark:text-gray-300">
+            Mostrando {(pagination.page - 1) * pagination.limit + 1} - {Math.min(pagination.page * pagination.limit, pagination.total)} de {pagination.total} préstamos
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => fetchPrestamos(pagination.page - 1)}
+              disabled={!pagination.hasPrevPage}
+              className="px-4 py-2 bg-gray-300 dark:bg-gray-700 text-gray-700 dark:text-white rounded-lg hover:bg-gray-400 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Anterior
+            </button>
+            <div className="flex gap-1">
+              {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
+                let pageNum;
+                if (pagination.totalPages <= 5) {
+                  pageNum = i + 1;
+                } else if (pagination.page <= 3) {
+                  pageNum = i + 1;
+                } else if (pagination.page >= pagination.totalPages - 2) {
+                  pageNum = pagination.totalPages - 4 + i;
+                } else {
+                  pageNum = pagination.page - 2 + i;
+                }
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => fetchPrestamos(pageNum)}
+                    className={`px-3 py-2 rounded-lg ${
+                      pagination.page === pageNum
+                        ? 'bg-primary-600 dark:bg-primary-500 text-white'
+                        : 'bg-gray-300 dark:bg-gray-700 text-gray-700 dark:text-white hover:bg-gray-400 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              onClick={() => fetchPrestamos(pagination.page + 1)}
+              disabled={!pagination.hasNextPage}
+              className="px-4 py-2 bg-gray-300 dark:bg-gray-700 text-gray-700 dark:text-white rounded-lg hover:bg-gray-400 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Siguiente
+            </button>
+          </div>
         </div>
       )}
 
@@ -777,25 +989,49 @@ const Prestamos = () => {
                     required
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Fecha Préstamo *</label>
-                  <input
-                    type="date"
-                    required
-                    value={formData.fecha_prestamo}
-                    onChange={(e) => setFormData({ ...formData, fecha_prestamo: e.target.value })}
-                    className="mt-1 block w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg px-3 py-2"
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Fecha Préstamo *</label>
+                    <input
+                      type="date"
+                      required
+                      value={formData.fecha_prestamo}
+                      onChange={(e) => setFormData({ ...formData, fecha_prestamo: e.target.value })}
+                      className="mt-1 block w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg px-3 py-2"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Hora Préstamo *</label>
+                    <input
+                      type="time"
+                      required
+                      value={formData.hora_prestamo}
+                      onChange={(e) => setFormData({ ...formData, hora_prestamo: e.target.value })}
+                      className="mt-1 block w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg px-3 py-2"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Fecha Devolución Prevista *</label>
-                  <input
-                    type="date"
-                    required
-                    value={formData.fecha_devolucion_prevista}
-                    onChange={(e) => setFormData({ ...formData, fecha_devolucion_prevista: e.target.value })}
-                    className="mt-1 block w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg px-3 py-2"
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Fecha Devolución Prevista *</label>
+                    <input
+                      type="date"
+                      required
+                      value={formData.fecha_devolucion_prevista}
+                      onChange={(e) => setFormData({ ...formData, fecha_devolucion_prevista: e.target.value })}
+                      className="mt-1 block w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg px-3 py-2"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Hora Devolución Prevista *</label>
+                    <input
+                      type="time"
+                      required
+                      value={formData.hora_devolucion_prevista}
+                      onChange={(e) => setFormData({ ...formData, hora_devolucion_prevista: e.target.value })}
+                      className="mt-1 block w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg px-3 py-2"
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Observaciones</label>
@@ -862,6 +1098,87 @@ const Prestamos = () => {
                   onClick={() => {
                     setShowDevolucionModal(false);
                     setSelectedPrestamo(null);
+                  }}
+                  className="flex-1 bg-gray-300 dark:bg-gray-700 text-gray-700 dark:text-white px-4 py-2 rounded-lg hover:bg-gray-400 dark:hover:bg-gray-600 transition-colors"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal renovar préstamo */}
+      {showRenovarModal && selectedPrestamo && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 dark:bg-opacity-70 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 transition-colors">
+            <h2 className="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Renovar Préstamo</h2>
+            <p className="mb-4 text-gray-600 dark:text-gray-400">
+              Recurso: <strong className="dark:text-white">{selectedPrestamo.recurso_nombre}</strong>
+            </p>
+            <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+              Fecha actual de devolución: {(() => {
+                try {
+                  const fecha = new Date(selectedPrestamo.fecha_devolucion_prevista.replace(' ', 'T'));
+                  return format(fecha, 'dd/MM/yyyy HH:mm');
+                } catch {
+                  return selectedPrestamo.fecha_devolucion_prevista;
+                }
+              })()}
+            </p>
+            <form onSubmit={handleRenovar}>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Nueva Fecha Devolución *</label>
+                    <input
+                      type="date"
+                      required
+                      value={renovarData.fecha_devolucion_prevista_nueva}
+                      onChange={(e) => setRenovarData({ ...renovarData, fecha_devolucion_prevista_nueva: e.target.value })}
+                      className="mt-1 block w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg px-3 py-2"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Nueva Hora Devolución *</label>
+                    <input
+                      type="time"
+                      required
+                      value={renovarData.hora_devolucion_prevista_nueva}
+                      onChange={(e) => setRenovarData({ ...renovarData, hora_devolucion_prevista_nueva: e.target.value })}
+                      className="mt-1 block w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg px-3 py-2"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Observaciones</label>
+                  <textarea
+                    value={renovarData.observaciones}
+                    onChange={(e) => setRenovarData({ ...renovarData, observaciones: e.target.value })}
+                    className="mt-1 block w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg px-3 py-2"
+                    rows="3"
+                    placeholder="Motivo de la renovación..."
+                  />
+                </div>
+              </div>
+              <div className="mt-6 flex space-x-4">
+                <button
+                  type="submit"
+                  className="flex-1 bg-blue-600 dark:bg-blue-700 text-white px-4 py-2 rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors"
+                >
+                  Renovar Préstamo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRenovarModal(false);
+                    setSelectedPrestamo(null);
+                    setRenovarData({
+                      fecha_devolucion_prevista_nueva: '',
+                      hora_devolucion_prevista_nueva: '',
+                      observaciones: ''
+                    });
                   }}
                   className="flex-1 bg-gray-300 dark:bg-gray-700 text-gray-700 dark:text-white px-4 py-2 rounded-lg hover:bg-gray-400 dark:hover:bg-gray-600 transition-colors"
                 >

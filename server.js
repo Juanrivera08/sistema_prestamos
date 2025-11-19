@@ -13,6 +13,10 @@ import recursosRoutes from './backend/routes/recursosRoutes.js';
 import usuariosRoutes from './backend/routes/usuariosRoutes.js';
 import prestamosRoutes from './backend/routes/prestamosRoutes.js';
 import informesRoutes from './backend/routes/informesRoutes.js';
+import reservasRoutes from './backend/routes/reservasRoutes.js';
+import notificacionesRoutes from './backend/routes/notificacionesRoutes.js';
+import multasRoutes from './backend/routes/multasRoutes.js';
+import historialRoutes from './backend/routes/historialRoutes.js';
 
 dotenv.config();
 
@@ -116,6 +120,10 @@ app.use('/api/recursos', recursosRoutes);
 app.use('/api/usuarios', usuariosRoutes);
 app.use('/api/prestamos', prestamosRoutes);
 app.use('/api/informes', informesRoutes);
+app.use('/api/reservas', reservasRoutes);
+app.use('/api/notificaciones', notificacionesRoutes);
+app.use('/api/multas', multasRoutes);
+app.use('/api/historial', historialRoutes);
 
 // Ruta de prueba
 app.get('/api', (req, res) => {
@@ -141,9 +149,22 @@ app.use((err, req, res, next) => {
 
 // Inicializar base de datos y luego iniciar servidor
 initDatabase()
-  .then(() => {
+  .then(async () => {
+    // Importar tareas programadas antes de iniciar el servidor
+    const { ejecutarTareasProgramadas } = await import('./backend/utils/cronJobs.js');
+    
     app.listen(PORT, () => {
       console.log(`Servidor corriendo en puerto ${PORT}`);
+      
+      // Ejecutar inmediatamente
+      ejecutarTareasProgramadas();
+      
+      // Ejecutar cada hora
+      setInterval(() => {
+        ejecutarTareasProgramadas();
+      }, 60 * 60 * 1000); // 1 hora
+      
+      console.log('Tareas programadas configuradas (cada hora)');
     });
   })
   .catch((error) => {
