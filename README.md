@@ -176,6 +176,12 @@ Este proyecto está bajo la Licencia ISC.
 
 Juan Rivera - [GitHub](https://github.com/Juanrivera08)
 
+## 📚 Documentación Completa
+
+- **[Documentación de la API](DOCUMENTACION_API.md)** - Documentación completa de todos los endpoints
+- **[Documentación Técnica](DOCUMENTACION_TECNICA.md)** - Arquitectura, base de datos y detalles técnicos
+- **[Guía de Usuario](GUIA_USUARIO.md)** - Guía completa para usuarios del sistema
+
 ## 🙏 Agradecimientos
 
 - Todos los contribuidores que han ayudado a mejorar este proyecto
