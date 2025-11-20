@@ -1,20 +1,26 @@
-# Sistema de Préstamos de Recursos Tecnológicos
+# 📚 Sistema de Gestión de Préstamos
 
-Sistema completo de gestión de préstamos de recursos tecnológicos desarrollado con React, Node.js y MySQL.
+Sistema completo de gestión de préstamos de recursos tecnológicos con autenticación, roles de usuario, notificaciones, multas, reservas y reportes.
 
 ## 🚀 Características
 
-- **Gestión de Recursos**: CRUD completo de recursos tecnológicos con imágenes
-- **Gestión de Usuarios**: Sistema de usuarios con roles (Administrador/Usuario)
-- **Gestión de Préstamos**: Crear préstamos, registrar devoluciones y seguimiento
-- **Informes y Estadísticas**: Dashboard con gráficos y exportación a PDF/Excel
-- **Autenticación**: Sistema seguro con JWT
-- **Interfaz Moderna**: Diseño responsive con TailwindCSS
+- ✅ Gestión de recursos tecnológicos (CRUD completo)
+- ✅ Sistema de préstamos con renovación y devolución
+- ✅ Reservas de recursos
+- ✅ Sistema de multas por retrasos
+- ✅ Notificaciones en tiempo real
+- ✅ Historial completo de préstamos
+- ✅ Reportes y estadísticas (Excel, PDF)
+- ✅ Códigos QR para recursos y préstamos
+- ✅ Calendario de préstamos
+- ✅ Roles: Administrador, Trabajador, Estudiante
+- ✅ Soft delete para recursos
+- ✅ Auditoría de acciones
 
-## 📋 Requisitos Previos
+## 📋 Requisitos
 
-- Node.js (v16 o superior)
-- MySQL (v8 o superior)
+- Node.js 18+
+- MySQL 8.0+
 - npm o yarn
 
 ## 🔧 Instalación
@@ -22,159 +28,126 @@ Sistema completo de gestión de préstamos de recursos tecnológicos desarrollad
 ### 1. Clonar el repositorio
 
 ```bash
-git clone <url-del-repositorio>
-cd sistemaPrestamo
+git clone https://github.com/Juanrivera08/sistema_prestamos.git
+cd sistema_prestamos
 ```
 
-### 2. Configurar Base de Datos
-
-1. Crear una base de datos MySQL:
-```sql
-CREATE DATABASE sistema_prestamos;
-```
-
-2. Configurar las variables de entorno en el archivo `.env` (crear desde `.env.example`):
-```env
-PORT=5000
-DB_HOST=localhost
-DB_USER=root
-DB_PASSWORD=tu_contraseña
-DB_NAME=sistema_prestamos
-JWT_SECRET=tu_secreto_jwt_muy_seguro_aqui
-NODE_ENV=development
-```
-
-### 3. Instalar dependencias del backend
+### 2. Instalar dependencias
 
 ```bash
+# Backend
 npm install
-```
 
-### 4. Instalar dependencias del frontend
-
-```bash
+# Frontend
 cd frontend
 npm install
 cd ..
 ```
 
-### 5. Inicializar la base de datos
+### 3. Configurar Base de Datos
 
-La base de datos se inicializará automáticamente al iniciar el servidor por primera vez. Se creará un usuario administrador por defecto:
-
-- **Email**: admin@sistema.com
-- **Contraseña**: admin123
-
-## 🏃 Ejecutar la Aplicación
-
-### Backend
-
-```bash
-npm run dev
+```sql
+CREATE DATABASE sistema_prestamos CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
-El servidor se ejecutará en `http://localhost:5000`
+### 4. Configurar Variables de Entorno
 
-### Frontend
+Crea un archivo `.env` en la raíz del proyecto con las siguientes variables:
 
-En otra terminal:
+```env
+NODE_ENV=development
+PORT=5000
+DB_HOST=localhost
+DB_USER=root
+DB_PASSWORD=tu_contraseña_mysql
+DB_NAME=sistema_prestamos
+JWT_SECRET=tu_secreto_jwt_muy_seguro_aqui
+FRONTEND_URL=http://localhost:3000
+ADMIN_EMAIL=admin@sistema.com
+ADMIN_PASSWORD=admin123
+ADMIN_CODIGO=ADMIN001
+```
+
+**Generar JWT_SECRET seguro:**
+```bash
+node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
+```
+
+⚠️ **IMPORTANTE:** 
+- Reemplaza `tu_contraseña_mysql` con tu contraseña de MySQL
+- Genera un `JWT_SECRET` seguro y único
+
+### 5. Construir Frontend
 
 ```bash
 cd frontend
-npm run dev
+npm run build
+cd ..
 ```
 
-La aplicación se abrirá en `http://localhost:3000`
+### 6. Iniciar Servidor
+
+```bash
+npm run dev  # Backend
+cd frontend && npm run dev  # Frontend (en otra terminal)
+```
+
+## 🌐 Acceso
+
+- **Frontend:** http://localhost:3000
+- **Backend API:** http://localhost:5000
+- **Email:** admin@sistema.com
+- **Contraseña:** admin123
+
+⚠️ **IMPORTANTE:** Cambia la contraseña del administrador después del primer login.
+
 
 ## 📁 Estructura del Proyecto
 
 ```
-sistemaPrestamo/
+sistema_prestamos/
 ├── backend/
-│   ├── config/
-│   │   └── database.js          # Configuración de MySQL
-│   ├── middleware/
-│   │   └── auth.js              # Middleware de autenticación
-│   └── routes/
-│       ├── authRoutes.js        # Rutas de autenticación
-│       ├── recursosRoutes.js    # Rutas de recursos
-│       ├── usuariosRoutes.js    # Rutas de usuarios
-│       ├── prestamosRoutes.js   # Rutas de préstamos
-│       └── informesRoutes.js    # Rutas de informes
+│   ├── config/          # Configuración de base de datos
+│   ├── middleware/      # Middlewares de autenticación
+│   ├── routes/          # Rutas de la API
+│   └── utils/           # Utilidades (validadores, cron jobs)
 ├── frontend/
 │   ├── src/
-│   │   ├── components/          # Componentes reutilizables
-│   │   ├── context/             # Context API
-│   │   ├── pages/               # Páginas principales
-│   │   └── App.jsx              # Componente principal
-│   └── package.json
-├── uploads/                      # Carpeta para imágenes
-├── server.js                     # Servidor Express
-└── package.json
+│   │   ├── components/  # Componentes React
+│   │   ├── context/     # Contextos (Auth, Theme)
+│   │   └── pages/       # Páginas principales
+│   └── dist/            # Build de producción
+├── uploads/             # Imágenes de recursos
+├── server.js            # Servidor Express
+└── .env                 # Variables de entorno (no subir a Git)
 ```
 
-## 🔐 Roles de Usuario
+## 🔐 Seguridad
 
-### Administrador
-- Gestionar recursos (crear, editar, eliminar)
-- Gestionar usuarios
-- Crear préstamos para cualquier usuario
-- Ver todos los préstamos
-- Acceso completo a informes
+- Autenticación JWT
+- Bcrypt para contraseñas
+- Rate limiting
+- Helmet para seguridad HTTP
+- Validación de datos
+- Sanitización de inputs
 
-### Usuario Estándar
-- Ver recursos disponibles
-- Crear préstamos para sí mismo
-- Ver sus propios préstamos
-- Registrar devoluciones de sus préstamos
-- Ver informes limitados
+## 📝 Scripts Disponibles
 
-## 📊 API Endpoints
+```bash
+npm run dev              # Backend con nodemon
+cd frontend && npm run dev  # Frontend con Vite
+```
 
-### Autenticación
-- `POST /api/auth/register` - Registro de usuario
-- `POST /api/auth/login` - Inicio de sesión
-- `GET /api/auth/me` - Obtener usuario actual
-
-### Recursos
-- `GET /api/recursos` - Listar recursos
-- `GET /api/recursos/:id` - Obtener recurso
-- `POST /api/recursos` - Crear recurso (Admin)
-- `PUT /api/recursos/:id` - Actualizar recurso (Admin)
-- `DELETE /api/recursos/:id` - Eliminar recurso (Admin)
-
-### Usuarios
-- `GET /api/usuarios` - Listar usuarios (Admin)
-- `GET /api/usuarios/:id` - Obtener usuario
-- `POST /api/usuarios` - Crear usuario (Admin)
-- `PUT /api/usuarios/:id` - Actualizar usuario
-- `DELETE /api/usuarios/:id` - Eliminar usuario (Admin)
-
-### Préstamos
-- `GET /api/prestamos` - Listar préstamos
-- `GET /api/prestamos/:id` - Obtener préstamo
-- `POST /api/prestamos` - Crear préstamo
-- `PUT /api/prestamos/:id/devolver` - Registrar devolución
-- `PUT /api/prestamos/:id` - Actualizar préstamo (Admin)
-- `DELETE /api/prestamos/:id` - Eliminar préstamo (Admin)
-
-### Informes
-- `GET /api/informes/estadisticas` - Obtener estadísticas
-- `GET /api/informes/prestamos` - Generar informe de préstamos
-- `GET /api/informes/prestamos?formato=excel` - Exportar a Excel
-- `GET /api/informes/prestamos?formato=pdf` - Exportar a PDF
-
-## 🛠️ Tecnologías Utilizadas
+## 🛠️ Tecnologías
 
 ### Backend
-- Node.js
-- Express.js
+- Node.js + Express
 - MySQL2
 - JWT (jsonwebtoken)
-- bcryptjs
-- Multer (subida de archivos)
-- XLSX (exportación Excel)
-- PDFKit (exportación PDF)
+- Bcryptjs
+- Multer (upload de archivos)
+- XLSX, PDFKit (reportes)
+- QRCode
 
 ### Frontend
 - React 18
@@ -184,30 +157,25 @@ sistemaPrestamo/
 - TailwindCSS
 - Recharts (gráficos)
 - date-fns
+- html5-qrcode
 
-## 📝 Notas
 
-- Las imágenes se guardan en la carpeta `uploads/`
-- El sistema valida que no se puedan prestar recursos ya prestados
-- Los préstamos vencidos se marcan automáticamente
-- Las exportaciones se generan en tiempo real según los filtros aplicados
+## 🤝 Contribuir
 
-## 🐛 Solución de Problemas
-
-### Error de conexión a la base de datos
-- Verificar que MySQL esté corriendo
-- Revisar las credenciales en `.env`
-- Asegurarse de que la base de datos existe
-
-### Error al subir imágenes
-- Verificar que la carpeta `uploads/` existe
-- Verificar permisos de escritura
-
-### Error de autenticación
-- Verificar que el token JWT sea válido
-- Revisar el JWT_SECRET en `.env`
+1. Fork el proyecto
+2. Crea una rama para tu feature (`git checkout -b feature/AmazingFeature`)
+3. Commit tus cambios (`git commit -m 'Add some AmazingFeature'`)
+4. Push a la rama (`git push origin feature/AmazingFeature`)
+5. Abre un Pull Request
 
 ## 📄 Licencia
 
-Este proyecto es de código abierto y está disponible bajo la licencia MIT.
+Este proyecto está bajo la Licencia ISC.
 
+## 👤 Autor
+
+Juan Rivera - [GitHub](https://github.com/Juanrivera08)
+
+## 🙏 Agradecimientos
+
+- Todos los contribuidores que han ayudado a mejorar este proyecto

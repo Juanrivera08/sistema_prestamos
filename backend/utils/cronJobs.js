@@ -1,5 +1,19 @@
 import pool from '../config/database.js';
 
+// Función helper para convertir fecha a objeto Date
+const convertirFecha = (fecha) => {
+  if (!fecha) return null;
+  // Si ya es un objeto Date, retornarlo
+  if (fecha instanceof Date) return fecha;
+  // Si es un string, convertirlo
+  if (typeof fecha === 'string') {
+    // Intentar diferentes formatos
+    const fechaStr = fecha.replace(' ', 'T');
+    return new Date(fechaStr);
+  }
+  return new Date(fecha);
+};
+
 // Función helper para crear notificaciones
 const crearNotificacion = async (usuarioId, tipo, titulo, mensaje, relacionId = null, relacionTipo = null) => {
   try {
@@ -49,7 +63,11 @@ export const verificarPrestamosProximosAVencer = async () => {
     `, [fechaLimite]);
 
     for (const prestamo of prestamos) {
-      const fechaVencimiento = new Date(prestamo.fecha_devolucion_prevista.replace(' ', 'T'));
+      const fechaVencimiento = convertirFecha(prestamo.fecha_devolucion_prevista);
+      if (!fechaVencimiento || isNaN(fechaVencimiento.getTime())) {
+        console.error('Fecha de vencimiento inválida para préstamo:', prestamo.id);
+        continue;
+      }
       const diasRestantes = Math.ceil((fechaVencimiento - new Date()) / (1000 * 60 * 60 * 24));
 
       await crearNotificacion(
@@ -93,7 +111,11 @@ export const verificarPrestamosVencidos = async () => {
     `);
 
     for (const prestamo of prestamos) {
-      const fechaVencimiento = new Date(prestamo.fecha_devolucion_prevista.replace(' ', 'T'));
+      const fechaVencimiento = convertirFecha(prestamo.fecha_devolucion_prevista);
+      if (!fechaVencimiento || isNaN(fechaVencimiento.getTime())) {
+        console.error('Fecha de vencimiento inválida para préstamo:', prestamo.id);
+        continue;
+      }
       const diasVencido = Math.floor((new Date() - fechaVencimiento) / (1000 * 60 * 60 * 24));
 
       await crearNotificacion(
@@ -142,7 +164,11 @@ export const calcularMultasAutomaticas = async () => {
     `);
 
     for (const prestamo of prestamos) {
-      const fechaPrevista = new Date(prestamo.fecha_devolucion_prevista.replace(' ', 'T'));
+      const fechaPrevista = convertirFecha(prestamo.fecha_devolucion_prevista);
+      if (!fechaPrevista || isNaN(fechaPrevista.getTime())) {
+        console.error('Fecha de vencimiento inválida para préstamo:', prestamo.id);
+        continue;
+      }
       const diasRetraso = Math.floor((new Date() - fechaPrevista) / (1000 * 60 * 60 * 24));
 
       if (diasRetraso > 0) {

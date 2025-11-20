@@ -41,13 +41,22 @@ router.get('/', authenticateToken, async (req, res) => {
     const [countResult] = await pool.query(countQuery, countParams);
 
     res.json({
-      notificaciones,
-      total: countResult[0].total,
-      noLeidas: notificaciones.filter(n => !n.leida).length
+      notificaciones: notificaciones || [],
+      total: countResult[0]?.total || 0,
+      noLeidas: (notificaciones || []).filter(n => !n.leida).length
     });
   } catch (error) {
     console.error('Error al obtener notificaciones:', error);
-    res.status(500).json({ message: 'Error al obtener notificaciones' });
+    console.error('Detalles del error:', {
+      message: error.message,
+      code: error.code,
+      sqlState: error.sqlState,
+      sqlMessage: error.sqlMessage
+    });
+    res.status(500).json({ 
+      message: 'Error al obtener notificaciones',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 

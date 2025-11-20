@@ -58,6 +58,18 @@ const Multas = () => {
     }
   };
 
+  const handleCancelar = async (id) => {
+    if (!confirm('¿Cancelar esta multa? Esta acción no se puede deshacer.')) return;
+
+    try {
+      await axios.put(`/api/multas/${id}/cancelar`);
+      fetchMultas();
+      alert('Multa cancelada exitosamente');
+    } catch (error) {
+      alert(error.response?.data?.message || 'Error al cancelar multa');
+    }
+  };
+
   const getEstadoColor = (estado) => {
     const colors = {
       pendiente: 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300',
@@ -173,14 +185,24 @@ const Multas = () => {
                   })() : '-'}
                 </td>
                 <td className="px-4 py-4 text-sm font-medium">
-                  {multa.estado === 'pendiente' && (isTrabajador || multa.usuario_id === user.id) && (
-                    <button
-                      onClick={() => handlePagar(multa.id)}
-                      className="text-green-600 dark:text-green-400 hover:text-green-900 dark:hover:text-green-300"
-                    >
-                      Pagar
-                    </button>
-                  )}
+                  <div className="flex space-x-2">
+                    {multa.estado === 'pendiente' && (isTrabajador || multa.usuario_id === user.id) && (
+                      <button
+                        onClick={() => handlePagar(multa.id)}
+                        className="text-green-600 dark:text-green-400 hover:text-green-900 dark:hover:text-green-300"
+                      >
+                        Pagar
+                      </button>
+                    )}
+                    {isAdmin && multa.estado !== 'cancelada' && (
+                      <button
+                        onClick={() => handleCancelar(multa.id)}
+                        className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300"
+                      >
+                        Cancelar
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}

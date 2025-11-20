@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { existsSync } from 'fs';
 import { initDatabase } from './backend/config/database.js';
 
 // Importar rutas
@@ -27,10 +28,6 @@ if (!process.env.JWT_SECRET) {
   process.exit(1);
 }
 
-if (process.env.JWT_SECRET === 'tu_secreto_jwt_muy_seguro_aqui_cambiar_en_produccion' && process.env.NODE_ENV === 'production') {
-  console.error('ERROR: JWT_SECRET debe ser cambiado en producción');
-  process.exit(1);
-}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -51,7 +48,7 @@ const corsOptions = {
       'http://127.0.0.1:3000'
     ];
     
-    if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
+    if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
       callback(new Error('No permitido por CORS'));
@@ -73,28 +70,22 @@ app.use(helmet({
 }));
 
 // Rate limiting para prevenir ataques de fuerza bruta
-// En desarrollo, límites más permisivos; en producción, más restrictivos
-const isDevelopment = process.env.NODE_ENV !== 'production';
-
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
-  max: isDevelopment ? 1000 : 100, // En desarrollo: 1000 requests, en producción: 100
+  max: 1000, // 1000 requests por ventana
   message: 'Demasiadas solicitudes desde esta IP, intenta de nuevo más tarde.',
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req) => {
-    // En desarrollo, no aplicar rate limiting a /api/auth/me (se llama frecuentemente)
-    if (isDevelopment) {
-      const path = req.path || req.originalUrl || '';
-      return path.includes('/api/auth/me');
-    }
-    return false;
+    // No aplicar rate limiting a /api/auth/me (se llama frecuentemente)
+    const path = req.path || req.originalUrl || '';
+    return path.includes('/api/auth/me');
   }
 });
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
-  max: isDevelopment ? 50 : 5, // En desarrollo: 50 intentos, en producción: 5
+  max: 50, // 50 intentos por ventana
   message: 'Demasiados intentos de inicio de sesión, intenta de nuevo más tarde.',
   skipSuccessfulRequests: true,
   standardHeaders: true,
@@ -130,10 +121,23 @@ app.get('/api', (req, res) => {
   res.json({ message: 'API del Sistema de Préstamos funcionando' });
 });
 
-// Ruta 404 para rutas no encontradas
-app.use((req, res) => {
+// Servir archivos estáticos del frontend (si existe la carpeta dist)
+const frontendDistPath = join(__dirname, 'frontend/dist');
+if (existsSync(frontendDistPath)) {
+  app.use(express.static(frontendDistPath));
+  
+  // Todas las rutas que no sean /api/* deben servir el index.html del frontend
+  app.get('*', (req, res) => {
+    if (!req.path.startsWith('/api')) {
+      res.sendFile(join(frontendDistPath, 'index.html'));
+    }
+  });
+}
+
+// Ruta 404 para rutas API no encontradas
+app.use('/api/*', (req, res) => {
   res.status(404).json({ 
-    message: 'Ruta no encontrada',
+    message: 'Ruta API no encontrada',
     path: req.originalUrl
   });
 });
@@ -143,7 +147,7 @@ app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(err.status || 500).json({ 
     message: err.message || 'Error interno del servidor',
-    error: process.env.NODE_ENV === 'development' ? err.message : {}
+    error: err.message
   });
 });
 

@@ -12,12 +12,14 @@ router.get('/estadisticas', authenticateToken, async (req, res) => {
     // Admin y trabajadores pueden ver todas las estadísticas
     const isAdminOrTrabajador = req.user.rol === 'administrador' || req.user.rol === 'trabajador';
 
-    // Total de recursos
-    const [totalRecursos] = await pool.query('SELECT COUNT(*) as total FROM recursos');
+    // Total de recursos (solo activos, excluyendo eliminados)
+    const [totalRecursos] = await pool.query(
+      'SELECT COUNT(*) as total FROM recursos WHERE deleted_at IS NULL'
+    );
     
-    // Recursos por estado
+    // Recursos por estado (solo activos)
     const [recursosPorEstado] = await pool.query(
-      'SELECT estado, COUNT(*) as cantidad FROM recursos GROUP BY estado'
+      'SELECT estado, COUNT(*) as cantidad FROM recursos WHERE deleted_at IS NULL GROUP BY estado'
     );
 
     // Total de préstamos
@@ -39,7 +41,7 @@ router.get('/estadisticas', authenticateToken, async (req, res) => {
     prestamosEstadoQuery += ' GROUP BY estado';
     const [prestamosPorEstado] = await pool.query(prestamosEstadoQuery, prestamosParams);
 
-    // Recursos más prestados
+    // Recursos más prestados (solo activos)
     let recursosPrestadosQuery = `
       SELECT 
         r.id,
@@ -48,6 +50,7 @@ router.get('/estadisticas', authenticateToken, async (req, res) => {
         COUNT(p.id) as veces_prestado
       FROM recursos r
       LEFT JOIN prestamos p ON r.id = p.recurso_id
+      WHERE r.deleted_at IS NULL
       GROUP BY r.id, r.codigo, r.nombre
       ORDER BY veces_prestado DESC
       LIMIT 10

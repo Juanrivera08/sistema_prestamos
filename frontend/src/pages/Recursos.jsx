@@ -33,6 +33,7 @@ const Recursos = () => {
   const [editingRecurso, setEditingRecurso] = useState(null);
   const [busqueda, setBusqueda] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('');
+  const [mostrarEliminados, setMostrarEliminados] = useState(false);
   const [categorias, setCategorias] = useState([]);
   const [mostrarNuevaCategoria, setMostrarNuevaCategoria] = useState(false);
   const [nuevaCategoria, setNuevaCategoria] = useState('');
@@ -52,7 +53,7 @@ const Recursos = () => {
       setFiltroEstado('disponible');
     }
     fetchRecursos();
-  }, [busqueda, filtroEstado, vistaAgrupada, isEstudiante]);
+  }, [busqueda, filtroEstado, vistaAgrupada, isEstudiante, mostrarEliminados]);
 
   const fetchCategorias = async () => {
     try {
@@ -69,6 +70,7 @@ const Recursos = () => {
       const params = new URLSearchParams();
       if (filtroEstado) params.append('estado', filtroEstado);
       if (busqueda) params.append('busqueda', busqueda);
+      if (mostrarEliminados) params.append('incluir_eliminados', 'true');
 
       if (vistaAgrupada) {
         params.append('agrupado', 'true');
@@ -119,7 +121,23 @@ const Recursos = () => {
       fetchRecursos();
       fetchCategorias(); // Actualizar categorías después de guardar
     } catch (error) {
-      alert(error.response?.data?.message || 'Error al guardar recurso');
+      console.error('Error al guardar recurso:', error);
+      console.error('Respuesta del servidor:', error.response?.data);
+      let errorMessage = error.response?.data?.message || error.response?.data?.error?.message || 'Error al guardar recurso';
+      
+      // Si hay información de debug, mostrarla
+      if (error.response?.data?.debug) {
+        const debug = error.response.data.debug;
+        console.log('Información de depuración:', debug);
+        if (debug.recursosActivos > 0) {
+          errorMessage += `\n\nHay ${debug.recursosActivos} recurso(s) activo(s) con ese código.`;
+          if (debug.detalles) {
+            errorMessage += `\nDetalles: ${JSON.stringify(debug.detalles, null, 2)}`;
+          }
+        }
+      }
+      
+      alert(errorMessage);
     }
   };
 
@@ -129,8 +147,21 @@ const Recursos = () => {
     try {
       await axios.delete(`/api/recursos/${id}`);
       fetchRecursos();
+      alert('Recurso eliminado exitosamente');
     } catch (error) {
       alert(error.response?.data?.message || 'Error al eliminar recurso');
+    }
+  };
+
+  const handleRestaurar = async (id) => {
+    if (!window.confirm('¿Restaurar este recurso eliminado?')) return;
+
+    try {
+      await axios.put(`/api/recursos/${id}/restaurar`);
+      fetchRecursos();
+      alert('Recurso restaurado exitosamente');
+    } catch (error) {
+      alert(error.response?.data?.message || 'Error al restaurar recurso');
     }
   };
 
@@ -294,6 +325,20 @@ const Recursos = () => {
             )}
           </select>
         </div>
+        {isTrabajador && !isEstudiante && (
+          <div className="mt-4 flex items-center">
+            <input
+              type="checkbox"
+              id="mostrarEliminados"
+              checked={mostrarEliminados}
+              onChange={(e) => setMostrarEliminados(e.target.checked)}
+              className="w-4 h-4 text-primary-600 bg-gray-100 border-gray-300 rounded focus:ring-primary-500 dark:focus:ring-primary-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+            />
+            <label htmlFor="mostrarEliminados" className="ml-2 text-sm text-gray-700 dark:text-gray-300">
+              Mostrar recursos eliminados
+            </label>
+          </div>
+        )}
       </div>
 
       {/* Lista de recursos */}
@@ -350,7 +395,12 @@ const Recursos = () => {
                           />
                         )}
                         <div className="flex justify-between items-start mb-2">
-                          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{recurso.nombre}</h3>
+                          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                            {recurso.nombre}
+                            {recurso.deleted_at && (
+                              <span className="ml-2 text-xs text-red-600 dark:text-red-400">(Eliminado)</span>
+                            )}
+                          </h3>
                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${getEstadoColor(recurso.estado)}`}>
                             {recurso.estado}
                           </span>
@@ -383,18 +433,30 @@ const Recursos = () => {
                           </button>
                           {isTrabajador && !isEstudiante && (
                             <>
-                              <button
-                                onClick={() => handleEdit(recurso)}
-                                className="flex-1 bg-primary-600 dark:bg-primary-500 text-white px-3 py-1.5 rounded text-xs hover:bg-primary-700 dark:hover:bg-primary-600 transition-colors"
-                              >
-                                Editar
-                              </button>
-                              <button
-                                onClick={() => handleDelete(recurso.id)}
-                                className="flex-1 bg-red-600 dark:bg-red-700 text-white px-3 py-1.5 rounded text-xs hover:bg-red-700 dark:hover:bg-red-600 transition-colors"
-                              >
-                                Eliminar
-                              </button>
+                              {recurso.deleted_at ? (
+                                <button
+                                  onClick={() => handleRestaurar(recurso.id)}
+                                  className="flex-1 bg-green-600 dark:bg-green-700 text-white px-3 py-1.5 rounded text-xs hover:bg-green-700 dark:hover:bg-green-600 transition-colors"
+                                  title="Restaurar recurso eliminado"
+                                >
+                                  🔄 Restaurar
+                                </button>
+                              ) : (
+                                <>
+                                  <button
+                                    onClick={() => handleEdit(recurso)}
+                                    className="flex-1 bg-primary-600 dark:bg-primary-500 text-white px-3 py-1.5 rounded text-xs hover:bg-primary-700 dark:hover:bg-primary-600 transition-colors"
+                                  >
+                                    Editar
+                                  </button>
+                                  <button
+                                    onClick={() => handleDelete(recurso.id)}
+                                    className="flex-1 bg-red-600 dark:bg-red-700 text-white px-3 py-1.5 rounded text-xs hover:bg-red-700 dark:hover:bg-red-600 transition-colors"
+                                  >
+                                    Eliminar
+                                  </button>
+                                </>
+                              )}
                             </>
                           )}
                         </div>
@@ -433,7 +495,12 @@ const Recursos = () => {
               )}
               <div className="p-6">
                 <div className="flex justify-between items-start mb-2">
-                  <h3 className="text-xl font-semibold text-gray-900 dark:text-white">{recurso.nombre}</h3>
+                  <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
+                    {recurso.nombre}
+                    {recurso.deleted_at && (
+                      <span className="ml-2 text-xs text-red-600 dark:text-red-400">(Eliminado)</span>
+                    )}
+                  </h3>
                   <span className={`px-2 py-1 rounded-full text-xs font-medium ${getEstadoColor(recurso.estado)}`}>
                     {recurso.estado}
                   </span>
@@ -481,18 +548,30 @@ const Recursos = () => {
 
                 {isTrabajador && !isEstudiante && (
                   <div className="mt-2 flex space-x-2">
-                    <button
-                      onClick={() => handleEdit(recurso)}
-                      className="flex-1 bg-primary-600 dark:bg-primary-500 text-white px-4 py-2 rounded hover:bg-primary-700 dark:hover:bg-primary-600 transition-colors"
-                    >
-                      Editar
-                    </button>
-                    <button
-                      onClick={() => handleDelete(recurso.id)}
-                      className="flex-1 bg-red-600 dark:bg-red-700 text-white px-4 py-2 rounded hover:bg-red-700 dark:hover:bg-red-600 transition-colors"
-                    >
-                      Eliminar
-                    </button>
+                    {recurso.deleted_at ? (
+                      <button
+                        onClick={() => handleRestaurar(recurso.id)}
+                        className="flex-1 bg-green-600 dark:bg-green-700 text-white px-4 py-2 rounded hover:bg-green-700 dark:hover:bg-green-600 transition-colors"
+                        title="Restaurar recurso eliminado"
+                      >
+                        🔄 Restaurar
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => handleEdit(recurso)}
+                          className="flex-1 bg-primary-600 dark:bg-primary-500 text-white px-4 py-2 rounded hover:bg-primary-700 dark:hover:bg-primary-600 transition-colors"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          onClick={() => handleDelete(recurso.id)}
+                          className="flex-1 bg-red-600 dark:bg-red-700 text-white px-4 py-2 rounded hover:bg-red-700 dark:hover:bg-red-600 transition-colors"
+                        >
+                          Eliminar
+                        </button>
+                      </>
+                    )}
                   </div>
                 )}
               </div>

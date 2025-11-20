@@ -166,49 +166,6 @@ router.get('/', authenticateToken, async (req, res) => {
 // Crear un nuevo préstamo (solo trabajadores y admin)
 router.post('/', authenticateToken, requireAdminOrTrabajador, async (req, res) => {
   try {
-    let query = `
-      SELECT 
-        p.*,
-        u.codigo as usuario_codigo,
-        u.nombre_completo as usuario_nombre,
-        u.email as usuario_email,
-        r.codigo as recurso_codigo,
-        r.nombre as recurso_nombre,
-        r.descripcion as recurso_descripcion,
-        r.imagen as recurso_imagen,
-        p.trabajador_id,
-        p.trabajador_nombre,
-        p.trabajador_email
-      FROM prestamos p
-      INNER JOIN usuarios u ON p.usuario_id = u.id
-      INNER JOIN recursos r ON p.recurso_id = r.id
-      WHERE p.id = ?
-    `;
-    const params = [req.params.id];
-
-    // Si es usuario estándar, solo ver sus préstamos. Admin y trabajadores ven todos
-    if (req.user.rol !== 'administrador' && req.user.rol !== 'trabajador') {
-      query += ' AND p.usuario_id = ?';
-      params.push(req.user.id);
-    }
-
-    const [prestamos] = await pool.query(query, params);
-
-    if (prestamos.length === 0) {
-      return res.status(404).json({ message: 'Préstamo no encontrado' });
-    }
-
-    res.json(prestamos[0]);
-  } catch (error) {
-    console.error('Error al obtener préstamo:', error);
-    res.status(500).json({ message: 'Error al obtener préstamo' });
-  }
-});
-
-// Crear préstamo(s) - soporta uno o múltiples recursos
-// Crear un nuevo préstamo (solo trabajadores y admin)
-router.post('/', authenticateToken, requireAdminOrTrabajador, async (req, res) => {
-  try {
     const { usuario_id, recurso_id, recursos_ids, fecha_prestamo, fecha_devolucion_prevista, observaciones } = req.body;
 
     // Determinar si es un solo recurso o múltiples
@@ -413,8 +370,8 @@ router.post('/', authenticateToken, requireAdminOrTrabajador, async (req, res) =
   }
 });
 
-// Registrar devolución
-router.put('/:id/devolver', authenticateToken, async (req, res) => {
+// Registrar devolución (solo trabajadores y admin)
+router.put('/:id/devolver', authenticateToken, requireAdminOrTrabajador, async (req, res) => {
   try {
     const { fecha_devolucion_real, observaciones } = req.body;
 
@@ -429,13 +386,6 @@ router.put('/:id/devolver', authenticateToken, async (req, res) => {
     }
 
     const prestamo = prestamos[0];
-
-    // Solo admin y trabajadores pueden devolver préstamos
-    if (req.user.rol !== 'administrador' && req.user.rol !== 'trabajador') {
-      return res.status(403).json({ 
-        message: 'Acceso denegado. Solo administradores y trabajadores pueden devolver préstamos' 
-      });
-    }
 
     if (prestamo.estado === 'devuelto') {
       return res.status(400).json({ message: 'El préstamo ya fue devuelto' });
@@ -505,7 +455,8 @@ router.put('/:id/devolver', authenticateToken, async (req, res) => {
 });
 
 // Renovar préstamo (extender fecha de devolución)
-router.put('/:id/renovar', authenticateToken, async (req, res) => {
+// Renovar préstamo (solo trabajadores y admin)
+router.put('/:id/renovar', authenticateToken, requireAdminOrTrabajador, async (req, res) => {
   try {
     const { fecha_devolucion_prevista_nueva, observaciones } = req.body;
 
@@ -523,11 +474,6 @@ router.put('/:id/renovar', authenticateToken, async (req, res) => {
     }
 
     const prestamo = prestamos[0];
-
-    // Solo admin y trabajadores pueden renovar préstamos
-    if (req.user.rol !== 'administrador' && req.user.rol !== 'trabajador') {
-      return res.status(403).json({ message: 'Acceso denegado. Solo administradores y trabajadores pueden renovar préstamos' });
-    }
 
     if (prestamo.estado !== 'activo') {
       return res.status(400).json({ message: 'Solo se pueden renovar préstamos activos' });

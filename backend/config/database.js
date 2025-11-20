@@ -27,6 +27,7 @@ export const initDatabase = async () => {
         email VARCHAR(255) UNIQUE NOT NULL,
         password VARCHAR(255) NOT NULL,
         rol ENUM('administrador', 'usuario', 'trabajador') DEFAULT 'usuario',
+        limite_prestamos_simultaneos INT DEFAULT 3,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       )
@@ -56,6 +57,7 @@ export const initDatabase = async () => {
         estado ENUM('disponible', 'prestado', 'mantenimiento') DEFAULT 'disponible',
         ubicacion VARCHAR(255),
         imagen VARCHAR(255),
+        deleted_at DATETIME NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         INDEX idx_categoria (categoria),
@@ -63,17 +65,26 @@ export const initDatabase = async () => {
       )
     `);
 
-    // Agregar columna categoria si no existe (para tablas existentes)
+    // Migración: Agregar columna categoria si no existe (para tablas existentes antiguas)
     try {
-      await connection.query(`
-        ALTER TABLE recursos 
-        ADD COLUMN categoria VARCHAR(100) AFTER nombre,
-        ADD INDEX idx_categoria (categoria)
+      const [columns] = await connection.query(`
+        SELECT COLUMN_NAME 
+        FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_SCHEMA = DATABASE() 
+        AND TABLE_NAME = 'recursos' 
+        AND COLUMN_NAME = 'categoria'
       `);
+      if (columns.length === 0) {
+        await connection.query(`
+          ALTER TABLE recursos 
+          ADD COLUMN categoria VARCHAR(100) AFTER nombre,
+          ADD INDEX idx_categoria (categoria)
+        `);
+        console.log('Columna categoria agregada a la tabla recursos (migración)');
+      }
     } catch (error) {
-      // La columna ya existe, ignorar error
       if (!error.message.includes('Duplicate column name')) {
-        console.warn('Advertencia al agregar columna categoria:', error.message);
+        console.warn('Advertencia al verificar/agregar columna categoria:', error.message);
       }
     }
 
@@ -103,20 +114,29 @@ export const initDatabase = async () => {
       )
     `);
 
-    // Agregar columnas de trabajador si no existen (para tablas existentes)
+    // Migración: Agregar columnas de trabajador si no existen (para tablas existentes antiguas)
     try {
-      await connection.query(`
-        ALTER TABLE prestamos 
-        ADD COLUMN trabajador_id INT AFTER recurso_id,
-        ADD COLUMN trabajador_nombre VARCHAR(255) AFTER trabajador_id,
-        ADD COLUMN trabajador_email VARCHAR(255) AFTER trabajador_nombre,
-        ADD FOREIGN KEY (trabajador_id) REFERENCES usuarios(id) ON DELETE CASCADE,
-        ADD INDEX idx_trabajador (trabajador_id)
+      const [columns] = await connection.query(`
+        SELECT COLUMN_NAME 
+        FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_SCHEMA = DATABASE() 
+        AND TABLE_NAME = 'prestamos' 
+        AND COLUMN_NAME = 'trabajador_id'
       `);
+      if (columns.length === 0) {
+        await connection.query(`
+          ALTER TABLE prestamos 
+          ADD COLUMN trabajador_id INT NOT NULL AFTER recurso_id,
+          ADD COLUMN trabajador_nombre VARCHAR(255) NOT NULL AFTER trabajador_id,
+          ADD COLUMN trabajador_email VARCHAR(255) NOT NULL AFTER trabajador_nombre,
+          ADD FOREIGN KEY (trabajador_id) REFERENCES usuarios(id) ON DELETE CASCADE,
+          ADD INDEX idx_trabajador (trabajador_id)
+        `);
+        console.log('Columnas de trabajador agregadas a la tabla prestamos (migración)');
+      }
     } catch (error) {
-      // Las columnas ya existen, ignorar error
       if (!error.message.includes('Duplicate column name') && !error.message.includes('Duplicate key name')) {
-        console.warn('Advertencia al agregar columnas de trabajador:', error.message);
+        console.warn('Advertencia al verificar/agregar columnas de trabajador:', error.message);
       }
     }
 
@@ -280,28 +300,47 @@ export const initDatabase = async () => {
       // Las configuraciones ya existen, ignorar
     }
 
-    // Agregar columna deleted_at para soft delete en recursos
+    // Migración: Agregar columna deleted_at si no existe (para tablas existentes antiguas)
     try {
-      await connection.query(`
-        ALTER TABLE recursos 
-        ADD COLUMN deleted_at DATETIME NULL
+      const [columns] = await connection.query(`
+        SELECT COLUMN_NAME 
+        FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_SCHEMA = DATABASE() 
+        AND TABLE_NAME = 'recursos' 
+        AND COLUMN_NAME = 'deleted_at'
       `);
+      if (columns.length === 0) {
+        await connection.query(`
+          ALTER TABLE recursos 
+          ADD COLUMN deleted_at DATETIME NULL
+        `);
+        console.log('Columna deleted_at agregada a la tabla recursos (migración)');
+      }
     } catch (error) {
-      // La columna ya existe, ignorar
       if (!error.message.includes('Duplicate column name')) {
-        console.warn('Advertencia al agregar columna deleted_at:', error.message);
+        console.warn('Advertencia al verificar/agregar columna deleted_at:', error.message);
       }
     }
 
-    // Agregar columna limite_prestamos_simultaneos en usuarios
+    // Migración: Agregar columna limite_prestamos_simultaneos si no existe (para tablas existentes antiguas)
     try {
-      await connection.query(`
-        ALTER TABLE usuarios 
-        ADD COLUMN limite_prestamos_simultaneos INT DEFAULT 3
+      const [columns] = await connection.query(`
+        SELECT COLUMN_NAME 
+        FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_SCHEMA = DATABASE() 
+        AND TABLE_NAME = 'usuarios' 
+        AND COLUMN_NAME = 'limite_prestamos_simultaneos'
       `);
+      if (columns.length === 0) {
+        await connection.query(`
+          ALTER TABLE usuarios 
+          ADD COLUMN limite_prestamos_simultaneos INT DEFAULT 3
+        `);
+        console.log('Columna limite_prestamos_simultaneos agregada a la tabla usuarios (migración)');
+      }
     } catch (error) {
       if (!error.message.includes('Duplicate column name')) {
-        console.warn('Advertencia al agregar columna limite_prestamos_simultaneos:', error.message);
+        console.warn('Advertencia al verificar/agregar columna limite_prestamos_simultaneos:', error.message);
       }
     }
 
