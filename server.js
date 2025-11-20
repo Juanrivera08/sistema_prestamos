@@ -48,6 +48,11 @@ const corsOptions = {
       'http://127.0.0.1:3000'
     ];
     
+    // En producción, permitir cualquier origen de Railway
+    if (process.env.RAILWAY_ENVIRONMENT || origin.includes('railway.app') || origin.includes('up.railway.app')) {
+      return callback(null, true);
+    }
+    
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
