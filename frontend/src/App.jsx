@@ -12,6 +12,7 @@ import Multas from './pages/Multas';
 import Historial from './pages/Historial';
 import Calendario from './pages/Calendario';
 import Informes from './pages/Informes';
+import Documentacion from './pages/Documentacion';
 import Layout from './components/Layout';
 
 function App() {
@@ -40,6 +41,7 @@ function App() {
               <Route path="historial/:tipo/:id" element={<Historial />} />
               <Route path="calendario" element={<Calendario />} />
               <Route path="informes" element={<Informes />} />
+              <Route path="documentacion" element={<Documentacion />} />
             </Route>
           </Routes>
         </Router>

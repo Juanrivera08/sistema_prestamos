@@ -30,6 +30,7 @@ const Layout = () => {
       { name: 'Calendario', path: '/calendario', icon: '📅' },
       { name: 'Informes', path: '/informes', icon: '📈' },
     ]),
+    { name: 'Documentación', path: '/documentacion', icon: '📚' },
   ];
 
   const allNavigation = [...mainNavigation, ...secondaryNavigation];
