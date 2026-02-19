@@ -24,7 +24,6 @@ const Layout = () => {
   // Menú secundario - elementos menos frecuentes
   const secondaryNavigation = [
     ...(isTrabajador ? [{ name: 'Usuarios', path: '/usuarios', icon: '👥' }] : []),
-    { name: 'Multas', path: '/multas', icon: '💰' },
     { name: 'Historial', path: '/historial', icon: '📜' },
     ...(isEstudiante ? [] : [
       { name: 'Calendario', path: '/calendario', icon: '📅' },

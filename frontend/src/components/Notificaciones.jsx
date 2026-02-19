@@ -1,27 +1,37 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
 import { format } from 'date-fns';
+import { API_ENDPOINTS } from '../config/api';
 
 const Notificaciones = () => {
   const [notificaciones, setNotificaciones] = useState([]);
   const [noLeidas, setNoLeidas] = useState(0);
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(true);
+  const pollingIntervalRef = useRef(null);
 
   useEffect(() => {
     fetchNotificaciones();
-    // Actualizar cada 30 segundos
-    const interval = setInterval(fetchNotificaciones, 30000);
-    return () => clearInterval(interval);
+    
+    // Polling cada 30 segundos
+    pollingIntervalRef.current = setInterval(fetchNotificaciones, 30000);
+    
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+    };
   }, []);
 
   const fetchNotificaciones = async () => {
     try {
-      const response = await axios.get('/api/notificaciones?limit=10');
-      setNotificaciones(response.data.notificaciones || []);
-      setNoLeidas(response.data.noLeidas || 0);
+      const response = await axios.get(API_ENDPOINTS.NOTIFICACIONES.LIST + '?limit=10');
+      const data = response.data.data || response.data;
+      setNotificaciones(data.notificaciones || []);
+      setNoLeidas(data.noLeidas || 0);
     } catch (error) {
       console.error('Error al obtener notificaciones:', error);
+      // No mostrar error, solo continuar con polling
     } finally {
       setLoading(false);
     }
@@ -29,8 +39,8 @@ const Notificaciones = () => {
 
   const marcarComoLeida = async (id) => {
     try {
-      await axios.put(`/api/notificaciones/${id}/leer`);
-      fetchNotificaciones();
+      await axios.patch(API_ENDPOINTS.NOTIFICACIONES.MARCAR_LEIDA(id));
+      await fetchNotificaciones();
     } catch (error) {
       console.error('Error al marcar notificación:', error);
     }
@@ -38,8 +48,11 @@ const Notificaciones = () => {
 
   const marcarTodasLeidas = async () => {
     try {
-      await axios.put('/api/notificaciones/marcar-todas-leidas');
-      fetchNotificaciones();
+      // Marcar todas como leídas
+      for (const notif of notificaciones.filter(n => !n.leida)) {
+        await axios.patch(API_ENDPOINTS.NOTIFICACIONES.MARCAR_LEIDA(notif.id));
+      }
+      await fetchNotificaciones();
     } catch (error) {
       console.error('Error al marcar notificaciones:', error);
     }
@@ -47,8 +60,9 @@ const Notificaciones = () => {
 
   const eliminarNotificacion = async (id) => {
     try {
+      // Nota: Este endpoint podría no existir, pero lo incluimos para cuando se implemente
       await axios.delete(`/api/notificaciones/${id}`);
-      fetchNotificaciones();
+      await fetchNotificaciones();
     } catch (error) {
       console.error('Error al eliminar notificación:', error);
     }

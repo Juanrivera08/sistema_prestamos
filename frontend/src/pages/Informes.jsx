@@ -218,31 +218,85 @@ const Informes = () => {
 
       {/* Estadísticas generales */}
       {stats && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 transition-colors">
-            <div className="text-sm text-gray-600 dark:text-gray-400">Total Recursos</div>
-            <div className="text-2xl font-bold text-gray-900 dark:text-white">{stats.recursos.total}</div>
-          </div>
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 transition-colors">
-            <div className="text-sm text-gray-600 dark:text-gray-400">Total Préstamos</div>
-            <div className="text-2xl font-bold text-gray-900 dark:text-white">{stats.prestamos.total}</div>
-          </div>
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 transition-colors">
-            <div className="text-sm text-gray-600 dark:text-gray-400">Préstamos Vencidos</div>
-            <div className="text-2xl font-bold text-red-600 dark:text-red-400">{stats.prestamos.vencidos}</div>
-          </div>
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 transition-colors">
-            <div className="text-sm text-gray-600 dark:text-gray-400">Recursos Más Prestados</div>
-            <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-              {stats.recursosMasPrestados?.[0]?.veces_prestado || 0}
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 transition-colors">
+              <div className="text-sm text-gray-600 dark:text-gray-400">Total Recursos</div>
+              <div className="text-2xl font-bold text-gray-900 dark:text-white">{stats.recursos.total}</div>
+            </div>
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 transition-colors">
+              <div className="text-sm text-gray-600 dark:text-gray-400">Total Préstamos</div>
+              <div className="text-2xl font-bold text-gray-900 dark:text-white">{stats.prestamos.total}</div>
+            </div>
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 transition-colors">
+              <div className="text-sm text-gray-600 dark:text-gray-400">Préstamos Vencidos</div>
+              <div className="text-2xl font-bold text-red-600 dark:text-red-400">{stats.prestamos.vencidos}</div>
+            </div>
+            <div className="bg-gradient-to-br from-blue-500 to-blue-600 dark:from-blue-600 dark:to-blue-700 rounded-lg shadow p-4 transition-colors">
+              <div className="text-sm text-blue-100">Producto Más Prestado</div>
+              <div className="text-2xl font-bold text-white">
+                {stats.recursosMasPrestados?.[0]?.veces_prestado || 0}
+              </div>
+              <div className="text-xs text-blue-100 mt-1 truncate">
+                {stats.recursosMasPrestados?.[0]?.nombre || 'N/A'}
+              </div>
             </div>
           </div>
-        </div>
+
+          {/* Card destacada: Producto más prestado */}
+          {stats.recursosMasPrestados && stats.recursosMasPrestados.length > 0 && (
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-lg shadow p-6 mb-6 border-2 border-blue-200 dark:border-blue-700 transition-colors">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">🏆 Análisis de Productos Más Prestados</h2>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {stats.recursosMasPrestados.slice(0, 3).map((recurso, index) => (
+                  <div key={recurso.id} className="bg-white dark:bg-gray-800 rounded-lg p-4 border-l-4" style={{borderLeftColor: ['#3b82f6', '#10b981', '#f59e0b'][index]}}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-2xl font-bold text-gray-900 dark:text-white">#{index + 1}</span>
+                      <span className="text-3xl">{['🥇', '🥈', '🥉'][index]}</span>
+                    </div>
+                    <h3 className="font-semibold text-gray-900 dark:text-white mb-1">{recurso.nombre}</h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Código: {recurso.codigo}</p>
+                    <div className="text-lg font-bold text-blue-600 dark:text-blue-400">
+                      {recurso.veces_prestado} préstamo{recurso.veces_prestado !== 1 ? 's' : ''}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* Gráficos */}
       {stats && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          {/* Recursos más prestados - DESTACADO */}
+          {stats.recursosMasPrestados && stats.recursosMasPrestados.length > 0 && (
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 transition-colors lg:col-span-2">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">📊 Top 10 Recursos Más Prestados</h2>
+              <ResponsiveContainer width="100%" height={350}>
+                <BarChart 
+                  data={stats.recursosMasPrestados.map(r => ({
+                    name: r.nombre.length > 20 ? r.nombre.substring(0, 20) + '...' : r.nombre,
+                    veces: r.veces_prestado,
+                    fullName: r.nombre
+                  }))}
+                  layout="vertical"
+                  margin={{ left: 200, right: 30 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis type="number" />
+                  <YAxis dataKey="name" type="category" width={200} />
+                  <Tooltip 
+                    formatter={(value) => `${value} préstamo${value !== 1 ? 's' : ''}`}
+                    labelFormatter={(label) => `Producto: ${label}`}
+                  />
+                  <Bar dataKey="veces" fill="#10b981" radius={[0, 8, 8, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 transition-colors">
             <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Recursos por Estado</h2>
             <ResponsiveContainer width="100%" height={300}>
@@ -280,28 +334,6 @@ const Informes = () => {
             </ResponsiveContainer>
           </div>
 
-          {/* Recursos más prestados */}
-          {stats.recursosMasPrestados && stats.recursosMasPrestados.length > 0 && (
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 transition-colors">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Top 10 Recursos Más Prestados</h2>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart 
-                  data={stats.recursosMasPrestados.map(r => ({
-                    name: r.nombre.length > 15 ? r.nombre.substring(0, 15) + '...' : r.nombre,
-                    veces: r.veces_prestado
-                  }))}
-                  layout="vertical"
-                >
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis type="number" />
-                  <YAxis dataKey="name" type="category" width={120} />
-                  <Tooltip />
-                  <Bar dataKey="veces" fill="#10b981" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-
           {/* Usuarios con más préstamos */}
           {stats.usuariosMasPrestamos && stats.usuariosMasPrestamos.length > 0 && (
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 transition-colors">
@@ -316,7 +348,7 @@ const Informes = () => {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
                   <YAxis />
-                  <Tooltip />
+                  <Tooltip formatter={(value) => `${value} préstamo${value !== 1 ? 's' : ''}`} />
                   <Bar dataKey="prestamos" fill="#f59e0b" />
                 </BarChart>
               </ResponsiveContainer>

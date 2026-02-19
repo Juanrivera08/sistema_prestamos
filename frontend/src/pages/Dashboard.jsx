@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
+import { API_ENDPOINTS } from '../config/api';
 import {
   BarChart,
   Bar,
@@ -25,14 +26,33 @@ const Dashboard = () => {
 
   const fetchStats = async () => {
     try {
-      const response = await axios.get('/api/informes/estadisticas');
-      setStats(response.data);
+      const response = await axios.get(API_ENDPOINTS.INFORMES.ESTADISTICAS);
+      setStats(response.data.data || response.data);
     } catch (error) {
       console.error('Error al obtener estadísticas:', error);
     } finally {
       setLoading(false);
     }
   };
+
+  // Cachear datos transformados con useMemo para evitar re-renders innecesarios
+  const recursosEstadoData = useMemo(() => {
+    if (!stats?.recursos?.porEstado) return [];
+    return stats.recursos.porEstado.map(item => ({
+      name: item.estado.charAt(0).toUpperCase() + item.estado.slice(1),
+      value: item.cantidad
+    }));
+  }, [stats?.recursos?.porEstado]);
+
+  const prestamosEstadoData = useMemo(() => {
+    if (!stats?.prestamos?.porEstado) return [];
+    return stats.prestamos.porEstado.map(item => ({
+      name: item.estado.charAt(0).toUpperCase() + item.estado.slice(1),
+      value: item.cantidad
+    }));
+  }, [stats?.prestamos?.porEstado]);
+
+  const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444'];
 
   if (loading) {
     return (
@@ -45,18 +65,6 @@ const Dashboard = () => {
   if (!stats) {
     return <div className="text-center text-red-600 dark:text-red-400">Error al cargar estadísticas</div>;
   }
-
-  const recursosEstadoData = stats.recursos.porEstado.map(item => ({
-    name: item.estado.charAt(0).toUpperCase() + item.estado.slice(1),
-    value: item.cantidad
-  }));
-
-  const prestamosEstadoData = stats.prestamos.porEstado.map(item => ({
-    name: item.estado.charAt(0).toUpperCase() + item.estado.slice(1),
-    value: item.cantidad
-  }));
-
-  const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444'];
 
   return (
     <div className="px-4 py-6">

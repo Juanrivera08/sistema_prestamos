@@ -427,37 +427,7 @@ Cancela una reserva. Solo para administradores y trabajadores.
 
 ---
 
-## 💰 Multas
-
-### GET `/api/multas`
-Obtiene la lista de multas.
-
-**Query Parameters:**
-- `estado` (opcional): Filtrar por estado (`pendiente`, `pagada`, `cancelada`)
-- `usuario_id` (opcional): Filtrar por usuario
-- `page` (opcional): Número de página
-- `limit` (opcional): Elementos por página
-
-**Nota:** Los estudiantes solo ven sus propias multas.
-
----
-
-### POST `/api/multas/calcular/:prestamo_id`
-Calcula y crea una multa para un préstamo vencido.
-
----
-
-### PUT `/api/multas/:id/pagar`
-Marca una multa como pagada.
-
----
-
-### PUT `/api/multas/:id/cancelar`
-Cancela una multa. Solo para administradores.
-
----
-
-## 🔔 Notificaciones
+##  Notificaciones
 
 ### GET `/api/notificaciones`
 Obtiene las notificaciones del usuario autenticado.
@@ -597,17 +567,16 @@ Obtiene el historial completo de préstamos. Solo para administradores y trabaja
 ### Administrador
 - Acceso completo a todas las funcionalidades
 - Puede crear, editar y eliminar usuarios, recursos, préstamos y reservas
-- Puede cancelar multas
 - Acceso a informes completos
 
 ### Trabajador
 - Puede crear, editar préstamos y reservas
 - Puede gestionar recursos
 - Puede ver todos los préstamos y reservas
-- No puede gestionar usuarios ni cancelar multas
+- No puede gestionar usuarios
 
 ### Estudiante (Usuario)
-- Solo puede ver sus propios préstamos, reservas y multas
+- Solo puede ver sus propios préstamos y reservas
 - Solo puede ver recursos disponibles
 - No puede crear, editar ni eliminar nada
 - Acceso de solo lectura

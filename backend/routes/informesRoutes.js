@@ -76,13 +76,14 @@ router.get('/estadisticas', authenticateToken, async (req, res) => {
     let prestamosVencidosQuery = `
       SELECT COUNT(*) as total 
       FROM prestamos 
-      WHERE estado = 'activo' 
-      AND fecha_devolucion_prevista < NOW()
+      WHERE estado = 'vencido'
     `;
+    let prestamosVencidosParams = [];
     if (!isAdminOrTrabajador) {
       prestamosVencidosQuery += ' AND usuario_id = ?';
+      prestamosVencidosParams = [req.user.id];
     }
-    const [prestamosVencidos] = await pool.query(prestamosVencidosQuery, prestamosParams);
+    const [prestamosVencidos] = await pool.query(prestamosVencidosQuery, prestamosVencidosParams);
 
     res.json({
       recursos: {

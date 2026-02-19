@@ -1,11 +1,37 @@
 // Validadores reutilizables
 
 /**
- * Valida formato de email
+ * Valida formato de email RFC 5322 mejorado
  */
 export const isValidEmail = (email) => {
+  // Validación RFC 5322 simplificada pero robusta
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
+  
+  // Validaciones adicionales
+  if (!email || typeof email !== 'string') return false;
+  if (email.length > 254) return false;
+  if (emailRegex.test(email)) {
+    const [localPart, ...domainParts] = email.split('@');
+    const domain = domainParts.join('@');
+    
+    // Validar local part (antes del @)
+    if (localPart.length > 64) return false;
+    if (localPart.startsWith('.') || localPart.endsWith('.')) return false;
+    if (localPart.includes('..')) return false;
+    
+    // Validar domain
+    if (domain.length > 255) return false;
+    if (!domain.includes('.')) return false;
+    if (domain.startsWith('.') || domain.endsWith('.')) return false;
+    if (domain.endsWith('-')) return false;
+    
+    // Validar que dominio tenga TLD válido (mínimo 2 caracteres)
+    const tld = domain.split('.').pop();
+    if (tld.length < 2 || tld.length > 6) return false;
+    
+    return true;
+  }
+  return false;
 };
 
 /**

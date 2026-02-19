@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync } from 'fs';
 import { initDatabase } from './backend/config/database.js';
+import { logger, loggerMiddleware } from './backend/utils/logger.js';
 
 // Importar rutas
 import authRoutes from './backend/routes/authRoutes.js';
@@ -16,7 +17,6 @@ import prestamosRoutes from './backend/routes/prestamosRoutes.js';
 import informesRoutes from './backend/routes/informesRoutes.js';
 import reservasRoutes from './backend/routes/reservasRoutes.js';
 import notificacionesRoutes from './backend/routes/notificacionesRoutes.js';
-import multasRoutes from './backend/routes/multasRoutes.js';
 import historialRoutes from './backend/routes/historialRoutes.js';
 
 dotenv.config();
@@ -74,34 +74,69 @@ app.use(helmet({
   contentSecurityPolicy: false // Deshabilitar CSP para desarrollo
 }));
 
+// Middleware de logging
+app.use(loggerMiddleware);
+logger.info(`Servidor iniciando en modo ${process.env.NODE_ENV || 'development'}`);
+
 // Rate limiting para prevenir ataques de fuerza bruta
+
+// Limitador general - 1000 requests por 15 minutos
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 1000, // 1000 requests por ventana
+  windowMs: 15 * 60 * 1000,
+  max: 1000,
   message: 'Demasiadas solicitudes desde esta IP, intenta de nuevo más tarde.',
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req) => {
-    // No aplicar rate limiting a /api/auth/me (se llama frecuentemente)
+    // No aplicar rate limiting a /api/auth/me y rutas estáticas
     const path = req.path || req.originalUrl || '';
-    return path.includes('/api/auth/me');
+    return path.includes('/api/auth/me') || path.startsWith('/uploads');
   }
 });
 
+// Limitador para autenticación - 10 intentos por 15 minutos (desarrollo) / 5 en producción
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 50, // 50 intentos por ventana
+  windowMs: 15 * 60 * 1000,
+  max: process.env.NODE_ENV === 'production' ? 5 : 10,
   message: 'Demasiados intentos de inicio de sesión, intenta de nuevo más tarde.',
-  skipSuccessfulRequests: true,
+  skipSuccessfulRequests: false,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => {
+    // Usar el email como clave para login
+    if (req.body?.email) {
+      return req.body.email;
+    }
+    return req.ip;
+  }
 });
 
-// Aplicar rate limiting a rutas específicas
-app.use('/api/auth/login', authLimiter);
-app.use('/api/auth/register', authLimiter);
+// Limitador para registro - 3 intentos por 30 minutos
+const registerLimiter = rateLimit({
+  windowMs: 30 * 60 * 1000,
+  max: 3,
+  message: 'Demasiados intentos de registro, intenta de nuevo más tarde.',
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false
+});
 
-// Aplicar limiter general a todas las rutas /api/ (excepto las excluidas en skip)
+// Limitador para operaciones críticas - 100 requests por 15 minutos
+const criticalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: 'Demasiadas solicitudes, intenta de nuevo más tarde.',
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+// Aplicar rate limiting a rutas sensibles
+// app.use('/api/auth/login', authLimiter); // Desactivado en desarrollo
+// app.use('/api/auth/register', registerLimiter); // Desactivado en desarrollo
+app.use('/api/usuarios', criticalLimiter);
+app.use('/api/prestamos', criticalLimiter);
+
+// Aplicar limiter general a todas las rutas /api/
 app.use('/api/', limiter);
 
 app.use(express.json({ limit: '10mb' }));
@@ -118,7 +153,6 @@ app.use('/api/prestamos', prestamosRoutes);
 app.use('/api/informes', informesRoutes);
 app.use('/api/reservas', reservasRoutes);
 app.use('/api/notificaciones', notificacionesRoutes);
-app.use('/api/multas', multasRoutes);
 app.use('/api/historial', historialRoutes);
 
 // Ruta de prueba
@@ -163,7 +197,7 @@ initDatabase()
     const { ejecutarTareasProgramadas } = await import('./backend/utils/cronJobs.js');
     
     app.listen(PORT, () => {
-      console.log(`Servidor corriendo en puerto ${PORT}`);
+      logger.success(`Servidor corriendo en puerto ${PORT}`);
       
       // Ejecutar inmediatamente
       ejecutarTareasProgramadas();
@@ -173,11 +207,11 @@ initDatabase()
         ejecutarTareasProgramadas();
       }, 60 * 60 * 1000); // 1 hora
       
-      console.log('Tareas programadas configuradas (cada hora)');
+      logger.info('Tareas programadas configuradas (cada hora)');
     });
   })
   .catch((error) => {
-    console.error('Error al inicializar la base de datos:', error);
+    logger.error('Error al inicializar la base de datos:', error);
     process.exit(1);
   });
 

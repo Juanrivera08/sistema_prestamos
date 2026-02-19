@@ -1,16 +1,17 @@
 # 📚 Sistema de Gestión de Préstamos
 
-Sistema completo de gestión de préstamos de recursos tecnológicos con autenticación, roles de usuario, notificaciones, multas, reservas y reportes.
+Sistema completo de gestión de préstamos de recursos tecnológicos con autenticación, roles de usuario, notificaciones, reservas y reportes.
 
 ## 🚀 Características
 
 - ✅ Gestión de recursos tecnológicos (CRUD completo)
 - ✅ Sistema de préstamos con renovación y devolución
 - ✅ Reservas de recursos
-- ✅ Sistema de multas por retrasos
 - ✅ Notificaciones en tiempo real
 - ✅ Historial completo de préstamos
 - ✅ Reportes y estadísticas (Excel, PDF)
+- ✅ Productos más prestados
+- ✅ Análisis de tendencias
 - ✅ Códigos QR para recursos y préstamos
 - ✅ Calendario de préstamos
 - ✅ Roles: Administrador, Trabajador, Estudiante

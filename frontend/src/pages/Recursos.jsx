@@ -4,6 +4,8 @@ import { useAuth } from '../context/AuthContext';
 import { Link } from 'react-router-dom';
 import QRCodeModal from '../components/QRCodeModal';
 import QRScanner from '../components/QRScanner';
+import ConfirmModal from '../components/ConfirmModal';
+import { API_ENDPOINTS } from '../config/api';
 
 // Función helper para obtener la URL de la imagen
 const getImageUrl = (imagePath) => {
@@ -37,6 +39,9 @@ const Recursos = () => {
   const [categorias, setCategorias] = useState([]);
   const [mostrarNuevaCategoria, setMostrarNuevaCategoria] = useState(false);
   const [nuevaCategoria, setNuevaCategoria] = useState('');
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [deletingResourceId, setDeletingResourceId] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [formData, setFormData] = useState({
     codigo: '',
     nombre: '',
@@ -141,15 +146,24 @@ const Recursos = () => {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('¿Estás seguro de eliminar este recurso?')) return;
+  const handleDelete = (id) => {
+    setDeletingResourceId(id);
+    setShowConfirmModal(true);
+  };
 
+  const confirmDelete = async () => {
+    if (!deletingResourceId) return;
+    setIsDeleting(true);
     try {
-      await axios.delete(`/api/recursos/${id}`);
-      fetchRecursos();
-      alert('Recurso eliminado exitosamente');
+      await axios.delete(API_ENDPOINTS.RECURSOS.DELETE(deletingResourceId));
+      await fetchRecursos();
+      setShowConfirmModal(false);
+      setDeletingResourceId(null);
     } catch (error) {
+      console.error('Error al eliminar:', error);
       alert(error.response?.data?.message || 'Error al eliminar recurso');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -870,6 +884,22 @@ const Recursos = () => {
           </div>
         </div>
       )}
+
+      {/* Modal de Confirmación para Eliminar */}
+      <ConfirmModal
+        isOpen={showConfirmModal}
+        title="Eliminar Recurso"
+        message="¿Estás seguro de que deseas eliminar este recurso? Esta acción no se puede deshacer, pero el recurso podrá ser restaurado desde la sección de eliminados."
+        confirmText="Eliminar"
+        cancelText="Cancelar"
+        isDangerous={true}
+        isLoading={isDeleting}
+        onConfirm={confirmDelete}
+        onCancel={() => {
+          setShowConfirmModal(false);
+          setDeletingResourceId(null);
+        }}
+      />
     </div>
   );
 };

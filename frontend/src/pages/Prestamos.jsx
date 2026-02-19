@@ -578,25 +578,27 @@ const Prestamos = () => {
                   >
                     📱 QR
                   </button>
-                  {prestamo.estado === 'activo' && !isEstudiante && (
+                  {!isEstudiante && (prestamo.estado === 'activo' || prestamo.estado === 'vencido') && (
                     <>
-                      <button
-                        onClick={() => {
-                          setSelectedPrestamo(prestamo);
-                          const fechaActual = new Date(prestamo.fecha_devolucion_prevista.replace(' ', 'T'));
-                          fechaActual.setDate(fechaActual.getDate() + 1);
-                          setRenovarData({
-                            fecha_devolucion_prevista_nueva: fechaActual.toISOString().split('T')[0],
-                            hora_devolucion_prevista_nueva: fechaActual.toTimeString().slice(0, 5),
-                            observaciones: ''
-                          });
-                          setShowRenovarModal(true);
-                        }}
-                        className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 mr-4 transition-colors"
-                        title="Renovar préstamo"
-                      >
-                        🔄 Renovar
-                      </button>
+                      {prestamo.estado === 'activo' && (
+                        <button
+                          onClick={() => {
+                            setSelectedPrestamo(prestamo);
+                            const fechaActual = new Date(prestamo.fecha_devolucion_prevista.replace(' ', 'T'));
+                            fechaActual.setDate(fechaActual.getDate() + 1);
+                            setRenovarData({
+                              fecha_devolucion_prevista_nueva: fechaActual.toISOString().split('T')[0],
+                              hora_devolucion_prevista_nueva: fechaActual.toTimeString().slice(0, 5),
+                              observaciones: ''
+                            });
+                            setShowRenovarModal(true);
+                          }}
+                          className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 mr-4 transition-colors"
+                          title="Renovar préstamo"
+                        >
+                          🔄 Renovar
+                        </button>
+                      )}
                       <button
                         onClick={() => {
                           setSelectedPrestamo(prestamo);
